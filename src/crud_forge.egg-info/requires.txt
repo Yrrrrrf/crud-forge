@@ -1,0 +1,9 @@
+fastapi>=0.111.0
+sqlalchemy>=2.0.30
+pydantic>=2.7.1
+
+[dev]
+pytest<7.0.0,>=6.2.5
+black<22.0.0,>=21.9b0
+isort<6.0.0,>=5.9.3
+mypy<1.0,>=0.910
