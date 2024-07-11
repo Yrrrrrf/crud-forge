@@ -1,7 +1,10 @@
 LICENSE
+MANIFEST.in
 README.md
 pyproject.toml
 setup.py
+docs/conf.py
+docs/images/pkg.svg
 src/crud_forge/__init__.py
 src/crud_forge/db.py
 src/crud_forge.egg-info/PKG-INFO

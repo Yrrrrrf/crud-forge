@@ -1,7 +1,9 @@
 # CRUD FORGE
 
-[![PyPI version](https://badge.fury.io/py/fastapi-crud-gen.svg)](https://badge.fury.io/py/fastapi-crud-gen)
-[![Documentation Status](https://readthedocs.org/projects/fastapi-crud-gen/badge/?version=latest)](https://fastapi-crud-gen.readthedocs.io/en/latest/?badge=latest)
+[![PyPI version](https://badge.fury.io/py/crud-forge.svg)](https://badge.fury.io/py/crud-forge)
+[![Documentation Status](https://readthedocs.org/projects/crud-forge/badge/?version=latest)](https://crud-forge.readthedocs.io/en/latest/?badge=latest)
+
+## Overview
 
 CRUD FORGE is a powerful Python package that simplifies the creation of CRUD (Create, Read, Update, Delete) operations for FastAPI applications. It automatically generates API routes and database models based on your SQLAlchemy models, saving you time and reducing boilerplate code.
 
@@ -67,11 +69,7 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
-[//]: # (show the svg of docs/images/pkg.svg)
-
-## Package Structure
-![CRUD FORGE](docs/images/pkg.svg)
-
+![CRUD FORGE MAIN STRUCTURE](docs/images/pkg.svg)
 
 This example sets up a simple User model and generates CRUD routes for it.
 

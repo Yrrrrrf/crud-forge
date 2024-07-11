@@ -4,3 +4,6 @@
 
 # Dependency directories
 dist
+
+# Compiled Python files
+.pypirc

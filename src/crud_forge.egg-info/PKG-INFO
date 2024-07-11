@@ -1,41 +1,20 @@
 Metadata-Version: 2.1
 Name: crud-forge
-Version: 0.1.0
+Version: 0.1.2
 Summary: A package for generating FastAPI CRUD operations and routes
-Home-page: https://github.com/Yrrrrrf/fastapi-crud-gen
+Home-page: https://github.com/Yrrrrrf/crud-forge
 Author: Yrrrrrf
 Author-email: Yrrrrrf <fernandorezacampos@gmail.com>
-License: MIT License
-        
-        Copyright (c) [2024] [Yrrrrrf]
-        
-        Permission is hereby granted, free of charge, to any person obtaining a copy
-        of this software and associated documentation files (the "Software"), to deal
-        in the Software without restriction, including without limitation the rights
-        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-        copies of the Software, and to permit persons to whom the Software is
-        furnished to do so, subject to the following conditions:
-        
-        The above copyright notice and this permission notice shall be included in all
-        copies or substantial portions of the Software.
-        
-        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-        SOFTWARE.
-        
+License: MIT
 Project-URL: Homepage, https://github.com/Yrrrrrf/crud-forge
 Project-URL: Repository, https://github.com/Yrrrrrf/crud-forge
 Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: Developers
-Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3.9
 Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11
 Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: fastapi>=0.111.0
@@ -49,8 +28,10 @@ Requires-Dist: mypy<1.0,>=0.910; extra == "dev"
 
 # CRUD FORGE
 
-[![PyPI version](https://badge.fury.io/py/fastapi-crud-gen.svg)](https://badge.fury.io/py/fastapi-crud-gen)
-[![Documentation Status](https://readthedocs.org/projects/fastapi-crud-gen/badge/?version=latest)](https://fastapi-crud-gen.readthedocs.io/en/latest/?badge=latest)
+[![PyPI version](https://badge.fury.io/py/crud-forge.svg)](https://badge.fury.io/py/crud-forge)
+[![Documentation Status](https://readthedocs.org/projects/crud-forge/badge/?version=latest)](https://crud-forge.readthedocs.io/en/latest/?badge=latest)
+
+## Overview
 
 CRUD FORGE is a powerful Python package that simplifies the creation of CRUD (Create, Read, Update, Delete) operations for FastAPI applications. It automatically generates API routes and database models based on your SQLAlchemy models, saving you time and reducing boilerplate code.
 
@@ -116,11 +97,7 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
-[//]: # (show the svg of docs/images/pkg.svg)
-
-## Package Structure
-![CRUD FORGE](docs/images/pkg.svg)
-
+![CRUD FORGE MAIN STRUCTURE](docs/images/pkg.svg)
 
 This example sets up a simple User model and generates CRUD routes for it.
 
