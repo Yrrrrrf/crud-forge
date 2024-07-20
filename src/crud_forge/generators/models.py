@@ -193,6 +193,7 @@ def generate_views(
 
     for schema in schemas:
         for table_name, table in metadata.tables.items():
+            # todo: refactor this to use a regex pattern...
             if table_name.startswith('report_') or table_name.startswith('view_'):
                 table_name = table_name.split('.')[-1]
                 columns = [(col.name, col.type.__class__.__name__.lower()) for col in table.columns]
