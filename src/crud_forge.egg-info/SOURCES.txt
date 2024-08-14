@@ -15,5 +15,6 @@ src/crud_forge.egg-info/top_level.txt
 src/crud_forge/generators/__init__.py
 src/crud_forge/generators/crud.py
 src/crud_forge/generators/models.py
+src/crud_forge/generators/routes.py
 src/crud_forge/utils/__init__.py
 src/crud_forge/utils/helpers.py

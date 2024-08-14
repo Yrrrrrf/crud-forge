@@ -1,19 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">
-  <rect x="10" y="10" width="380" height="280" fill="#f0f0f0" stroke="#000000" stroke-width="2"/>
-  <text x="200" y="40" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">CRUD Forge</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <style>
+    .title { font: bold 24px sans-serif; }
+    .package { font: bold 18px sans-serif; }
+    .file { font: 16px sans-serif; }
+    .directory { font: italic 16px sans-serif; }
+    rect { fill: #f0f0f0; stroke: #333; stroke-width: 2; }
+    line { stroke: #333; stroke-width: 2; }
+  </style>
   
-  <rect x="30" y="60" width="160" height="100" fill="#e0e0ff" stroke="#000000" stroke-width="2"/>
-  <text x="110" y="80" text-anchor="middle" font-family="Arial" font-size="14">generators</text>
-  <text x="110" y="100" text-anchor="middle" font-family="Arial" font-size="12">generate_crud()</text>
-  <text x="110" y="120" text-anchor="middle" font-family="Arial" font-size="12">generate_models()</text>
-  <text x="110" y="140" text-anchor="middle" font-family="Arial" font-size="12">generate_views()</text>
+  <text x="400" y="30" text-anchor="middle" class="title">CRUD Forge Package Structure</text>
   
-  <rect x="210" y="60" width="160" height="100" fill="#ffe0e0" stroke="#000000" stroke-width="2"/>
-  <text x="290" y="80" text-anchor="middle" font-family="Arial" font-size="14">db</text>
-  <text x="290" y="100" text-anchor="middle" font-family="Arial" font-size="12">DatabaseManager</text>
-  <text x="290" y="120" text-anchor="middle" font-family="Arial" font-size="12">get_db()</text>
-  
-  <rect x="30" y="180" width="340" height="60" fill="#e0ffe0" stroke="#000000" stroke-width="2"/>
-  <text x="200" y="200" text-anchor="middle" font-family="Arial" font-size="14">utils</text>
-  <text x="200" y="220" text-anchor="middle" font-family="Arial" font-size="12">Various utility functions</text>
+  <g transform="translate(50,50)">
+    <rect x="0" y="0" width="700" height="500" rx="10" ry="10"/>
+    <text x="350" y="30" text-anchor="middle" class="package">crud_forge</text>
+    
+    <g transform="translate(20,50)">
+      <rect x="0" y="0" width="200" height="150" rx="10" ry="10"/>
+      <text x="100" y="30" text-anchor="middle" class="directory">generators</text>
+      <text x="10" y="60" class="file">crud.py</text>
+      <text x="10" y="90" class="file">models.py</text>
+      <text x="10" y="120" class="file">routes.py</text>
+    </g>
+    
+    <g transform="translate(240,50)">
+      <rect x="0" y="0" width="200" height="120" rx="10" ry="10"/>
+      <text x="100" y="30" text-anchor="middle" class="directory">utils</text>
+      <text x="10" y="60" class="file">helpers.py</text>
+    </g>
+    
+    <g transform="translate(20,220)">
+      <rect x="0" y="0" width="640" height="60" rx="10" ry="10"/>
+      <text x="10" y="35" class="file">db.py</text>
+    </g>
+  </g>
 </svg>

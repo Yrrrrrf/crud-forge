@@ -1,4 +1,3 @@
-from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Tuple, Any
 from sqlalchemy import create_engine, Engine, inspect, text
@@ -51,6 +50,7 @@ class ColumnMetadata:
     name: str
     type: str
     is_primary_key: bool
+    is_foreign_key: bool = False
 
 @dataclass
 class TableMetadata:
@@ -150,11 +150,14 @@ class DatabaseManager:
         columns = inspector.get_columns(table, schema=None if schema == 'default' else schema)
         pk_constraint = inspector.get_pk_constraint(table, schema=None if schema == 'default' else schema)
         pk_columns = pk_constraint['constrained_columns'] if pk_constraint else []
+        fk_constraints = inspector.get_foreign_keys(table, schema=None if schema == 'default' else schema)
+        fk_columns = [fk['constrained_columns'][0] for fk in fk_constraints]
         
         return [ColumnMetadata(
             name=col['name'],
             type=str(col['type']),
-            is_primary_key=col['name'] in pk_columns
+            is_primary_key=col['name'] in pk_columns,
+            is_foreign_key=col['name'] in fk_columns
         ) for col in columns]
 
     def get_table_columns(self, schema: str, table: str) -> List[ColumnMetadata]:
