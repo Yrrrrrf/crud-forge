@@ -45,18 +45,22 @@ class DBConfig:
                 return f"{self.db_type}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
             case _: raise ValueError(f"Unsupported database type: {self.db_type}")
 
+
+@dataclass
+class ColumnMetadata:
+    name: str
+    type: str
+    is_primary_key: bool
+
 @dataclass
 class TableMetadata:
-    name: str  # table name
-    # columns as a list of tuples (column_name, column_type)
-    columns: List[Tuple[str, str]] = field(default_factory=list)
+    name: str
+    columns: List[ColumnMetadata] = field(default_factory=list)
 
 @dataclass
 class SchemaMetadata:
-    name: str  # schema name
-    # tables as a dictionary of table_name: TableMetadata
+    name: str
     tables: Dict[str, TableMetadata] = field(default_factory=dict)
-
 
 class DatabaseManager:
     """Manages database connection, session creation, and metadata retrieval."""
@@ -115,6 +119,7 @@ class DatabaseManager:
             print(f"Connection test failed: {str(e)}")
             return False
 
+
     @lru_cache(maxsize=None)
     def _get_metadata(self) -> Dict[str, SchemaMetadata]:
         """Retrieve all metadata including schemas, tables, and columns."""
@@ -132,31 +137,27 @@ class DatabaseManager:
             schema_metadata = SchemaMetadata(name=schema)
             
             for table in inspector.get_table_names(schema=schema if schema != 'default' else None):
-                schema_metadata.tables[table] = TableMetadata(name=table, columns=self._get_table_columns(inspector, schema, table))
-            # # * same as above but using some list comprehension
-            # schema_metadata.tables = {table: TableMetadata(name=table, columns=self._get_table_columns(inspector, schema, table)) for table in tables}
+                columns = self._get_table_columns(inspector, schema, table)
+                schema_metadata.tables[table] = TableMetadata(name=table, columns=columns)
 
             metadata[schema] = schema_metadata
 
         return metadata
 
     @staticmethod
-    def _get_table_columns(inspector: Any, schema: str, table: str) -> List[Tuple[str, str]]:
+    def _get_table_columns(inspector: Any, schema: str, table: str) -> List[ColumnMetadata]:
         """Get the columns of a specific table."""
         columns = inspector.get_columns(table, schema=None if schema == 'default' else schema)
-        return [(col['name'], str(col['type'])) for col in columns]
+        pk_constraint = inspector.get_pk_constraint(table, schema=None if schema == 'default' else schema)
+        pk_columns = pk_constraint['constrained_columns'] if pk_constraint else []
+        
+        return [ColumnMetadata(
+            name=col['name'],
+            type=str(col['type']),
+            is_primary_key=col['name'] in pk_columns
+        ) for col in columns]
 
-    @property
-    def schemas(self) -> List[str]:
-        """Get the list of schemas."""
-        return list(self.metadata.keys())
-
-    @property
-    def tables(self) -> Dict[str, List[str]]:
-        """Get the dictionary of tables for each schema."""
-        return {schema: list(self.metadata[schema].tables.keys()) for schema in self.schemas}
-
-    def get_table_columns(self, schema: str, table: str) -> List[Tuple[str, str]]:
+    def get_table_columns(self, schema: str, table: str) -> List[ColumnMetadata]:
         """Get the columns of a specific table."""
         return self.metadata[schema].tables[table].columns
 
