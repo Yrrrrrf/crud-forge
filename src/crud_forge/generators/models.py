@@ -3,6 +3,7 @@ import sqlalchemy
 from sqlalchemy.orm import declarative_base
 from pydantic import BaseModel, create_model
 from datetime import date, time, datetime
+from uuid import UUID
 
 # Create base model for SQLAlchemy
 Base = declarative_base()
@@ -17,18 +18,19 @@ class ModelGenerator:
     """
     SQL_TYPE_MAPPING = {
         'character varying': (sqlalchemy.String, str),
+        # 'string_type': (sqlalchemy.String, str),
+        'varchar': (sqlalchemy.String, str),
+        'uuid': (sqlalchemy.String, UUID),
+        'text': (sqlalchemy.Text, str),
         'boolean': (sqlalchemy.Boolean, bool),
         'integer': (sqlalchemy.Integer, int),
-        'numeric': (sqlalchemy.Numeric, float),
         'bigint': (sqlalchemy.BigInteger, int),
-        'text': (sqlalchemy.Text, str),
-        'varchar': (sqlalchemy.String, str),
+        'numeric': (sqlalchemy.Numeric, float),
         'date': (sqlalchemy.Date, date),
         'time': (sqlalchemy.Time, time),
         'timestamp': (sqlalchemy.DateTime, datetime),
         'datetime': (sqlalchemy.DateTime, datetime),
         'jsonb': (sqlalchemy.JSON, dict),
-        'string_type': (sqlalchemy.String, str),
     }
 
     @classmethod
@@ -43,7 +45,7 @@ class ModelGenerator:
         Generate SQLAlchemy model class from table metadata.
 
         Args:
-            table_name (str): Name of the table.
+        table_name (str): Name of the table.
             columns (List[Tuple[str, str]]): List of column name and type pairs.
             primary_keys (List[str]): List of primary key column names.
             schema (str): Database schema name.
@@ -202,3 +204,28 @@ def generate_views(
                 combined_models[table_name] = (sqlalchemy_model, pydantic_model)
 
     return combined_models
+
+
+
+
+
+# todo: Check this new code impl for generating Pydantic models
+# todo: This handle UUIDs as strings, but we can add a check for UUIDs and use the UUID type instead
+# @classmethod
+# def generate_pydantic_model(cls, table_name: str, columns: List[Tuple[str, str]], schema: str = '') -> Type[BaseModel]:
+#     fields: Dict[str, Any] = {}
+#     print(f"\tPydantic Model: {table_name}")
+#     for column_name, column_type in columns:
+#         print(f"\t\tColumn: {column_name} - {column_type}")
+#         _, pydantic_type = cls.SQL_TYPE_MAPPING.get(column_type, (str, str))
+#         if pydantic_type == UUID:
+#             fields[column_name] = (Union[UUID, str, None], None)
+#         else:
+#             fields[column_name] = (Union[pydantic_type, None], None)
+
+#     model_name = f"{table_name.capitalize()}Pydantic"
+#     if schema:
+#         model_name = f"{schema.capitalize()}{model_name}"
+
+#     return create_model(model_name, **fields)
+
