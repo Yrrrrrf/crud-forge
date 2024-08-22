@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, FastAPI
 from typing import List, Dict, Callable
 from sqlalchemy.orm import Session
 
-from ..db import ColumnMetadata, SchemaMetadata
+from ..db import ColumnMetadata, SchemaMetadata, TableMetadata
 
 
 def generate_metadata_routes(
@@ -21,13 +21,11 @@ def generate_metadata_routes(
     # ^ But I also think that the TableMetadata contains so much information that it is not necessary to return it all
     # ^ So, I think that the response model should be a list of strings
     # todo: Check what is the correct response model for this endpoint...
-    @metadata.get("/{schema}/tables", response_model=List[str])
-    # @metadata.get("/tables/{schema}", response_model=List[TableMetadata])
-    def get_tables(schema: str, db: Session = Depends(db_dependency)) -> List[str]:
-    # def get_tables(schema: str, db: Session = Depends(db_dependency)) -> List[TableMetadata]:
+    @metadata.get("/{schema}/tables", response_model=List[TableMetadata])
+    def get_tables(schema: str, db: Session = Depends(db_dependency)) -> List[TableMetadata]:
         """Get the list of tables in a schema."""
-        try: return list(db_metadata[schema].tables.keys())
-            # return list(db_metadata[schema].tables.values())  # if response model is List[TableMetadata]
+        try:
+            return list(db_metadata[schema].tables.values())  # if response model is List[TableMetadata]
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Schema '{schema}' not found")
 

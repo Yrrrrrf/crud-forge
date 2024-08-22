@@ -1,6 +1,7 @@
 fastapi>=0.111.0
 sqlalchemy>=2.0.30
 pydantic>=2.7.1
+psycopg2>=2.9.3
 
 [dev]
 pytest<7.0.0,>=6.2.5

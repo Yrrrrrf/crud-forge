@@ -66,7 +66,7 @@ class ModelGenerator:
             '__table_args__': {'schema': schema}
         }
 
-        print(f"\t  \033[94m[SQLAlchemy]\033[0m {table_name}")
+        print(f"\t    \033[94m[SQLAlchemy]_Model:\033[0m {table_name}")
 
         for column in columns:
             column_class, _ = cls.SQL_TYPE_MAPPING.get(column.type.lower(), (sqlalchemy.String, str))
@@ -87,7 +87,7 @@ class ModelGenerator:
         fields: Dict[str, Any] = {}
 
         model_name = f"{table_name}_pydantic"
-        print(f"\t  \033[95m[ Pydantic ]\033[0m {model_name}")
+        print(f"\t    \033[95m[ Pydantic ]_Model:\033[0m {model_name}")
 
         for column in columns:
             _, pydantic_type = cls.SQL_TYPE_MAPPING.get(column.type.lower(), (str, str))
@@ -112,7 +112,7 @@ def generate_models_from_metadata(metadata: Dict[str, SchemaMetadata]) -> Dict[s
         schema_models: Dict[str, Tuple[Type[Base], Type[BaseModel]]] = {}
 
         for table_name, table_metadata in schema_metadata.tables.items():
-            print(f"\n\t\033[96m[Table]\033[0m \033[1m{table_name}\033[0m")
+            print(f"\n\t\033[96m[Table]\033[0m \033[1m{schema_name}.\033[4m{table_name}\033[0m")
             sqlalchemy_model = ModelGenerator.generate_sqlalchemy_model(table_name, table_metadata.columns, schema_name)
             pydantic_model = ModelGenerator.generate_pydantic_model(table_name, table_metadata.columns, schema_name)
             ModelGenerator.print_model_field(table_metadata)

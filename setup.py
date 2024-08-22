@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     # Package details
     name="crud-forge",
-    version="0.1.4",
+    version="0.1.5",
     description="A package for generating FastAPI CRUD operations and routes",
     url="https://github.com/Yrrrrrf/crud-forge",
     python_requires=">=3.10",
@@ -21,6 +21,7 @@ setup(
         "fastapi>=0.111.0",
         "sqlalchemy>=2.0.30",
         "pydantic>=2.7.1",
+        "psycopg2>=2.9.3",
     ],
 
     extras_require={  # Add development dependencies (extras_require)
