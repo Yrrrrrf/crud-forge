@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"  # Use setuptools as the build backend
 
 [project]  # Project metadata
 name = "crud-forge"
-version = "0.1.5"
+version = "0.1.6"
 description = "A package for generating FastAPI CRUD operations and routes"
 requires-python = ">=3.10"
 license = { text = "MIT" }

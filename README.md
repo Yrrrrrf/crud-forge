@@ -23,7 +23,7 @@ CRUD FORGE is a powerful Python package that revolutionizes the creation of CRUD
 Install CRUD FORGE using pip:
 
 ```bash
-pip install crud-forge==0.1.4
+pip install crud-forge==0.1.6
 ```
 
 ## Quick Start

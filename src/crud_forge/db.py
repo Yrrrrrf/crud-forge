@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Tuple, Any
 from sqlalchemy import create_engine, Engine, inspect, text
+import sqlalchemy
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from functools import lru_cache
@@ -51,6 +52,7 @@ class ColumnMetadata:
     type: str
     is_primary_key: bool
     is_foreign_key: bool = False
+    is_enum: bool = False  # Add this line
 
 @dataclass
 class TableMetadata:
@@ -62,8 +64,14 @@ class SchemaMetadata:
     name: str
     tables: Dict[str, TableMetadata] = field(default_factory=dict)
 
+
+@dataclass
+class EnumMetadata:
+    name: str
+    values: List[str]
+
 class DatabaseManager:
-    """Manages database connection, session creation, and metadata retrieval."""
+    """Manages database connection, session creation, metadata retrieval, and enum information."""
 
     def __init__(self, db_url: Optional[str] = None, **kwargs):
         """Initialize the DatabaseManager."""
@@ -72,6 +80,7 @@ class DatabaseManager:
             self.engine: Engine = create_engine(self.db_config.url)
             self.SessionLocal: sessionmaker = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
             self.metadata: Dict[str, SchemaMetadata] = self._get_metadata()
+            self.enums: Dict[str, Dict[str, EnumMetadata]] = self._get_enum_metadata()
         except Exception as e:
             print(f"Error initializing DatabaseManager: {str(e)}")
             raise
@@ -157,12 +166,57 @@ class DatabaseManager:
             name=col['name'],
             type=str(col['type']),
             is_primary_key=col['name'] in pk_columns,
-            is_foreign_key=col['name'] in fk_columns
+            is_foreign_key=col['name'] in fk_columns,
+            is_enum=isinstance(col['type'], sqlalchemy.Enum)  # Add this line
         ) for col in columns]
 
     def get_table_columns(self, schema: str, table: str) -> List[ColumnMetadata]:
         """Get the columns of a specific table."""
         return self.metadata[schema].tables[table].columns
+
+    # @property  # means that the method can be accessed as an attribute
+    def _get_enum_metadata(self) -> Dict[str, Dict[str, EnumMetadata]]:
+        """Retrieve all enum metadata."""
+        if self.db_config.db_type != 'postgresql':
+            return {}  # Return empty dict for non-PostgreSQL databases
+
+        enum_query = """
+        SELECT 
+            n.nspname AS schema_name,
+            t.typname AS enum_name,
+            array_agg(e.enumlabel ORDER BY e.enumsortorder) AS enum_values
+        FROM pg_type t
+        JOIN pg_enum e ON t.oid = e.enumtypid
+        JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+        GROUP BY schema_name, enum_name
+        ORDER BY schema_name, enum_name;
+        """
+
+        enum_metadata: Dict[str, Dict[str, EnumMetadata]] = {}
+
+        with self.engine.connect() as connection:
+            result = connection.execute(text(enum_query))
+            for row in result:
+                schema_name, enum_name, enum_values = row
+                if schema_name not in enum_metadata:
+                    enum_metadata[schema_name] = {}
+                enum_metadata[schema_name][enum_name] = EnumMetadata(name=enum_name, values=enum_values)
+
+        return enum_metadata
+
+    # def get_enum_metadata(self, schema: str, enum_name: str) -> Optional[EnumMetadata]:
+    #     """Get the metadata for a specific enum."""
+    #     return self.enums.get(schema, {}).get(enum_name)
+
+    # def print_enum_metadata(self):
+    #     """Print all enum metadata in a formatted way."""
+    #     for schema_name, schema_enums in self.enums.items():
+    #         print(f"\n\033[93m[Schema]\033[0m {schema_name}")
+    #         for enum_name, enum_metadata in schema_enums.items():
+    #             print(f"\n\t\033[96m[Enum]\033[0m \033[1m{schema_name}.\033[4m{enum_name}\033[0m")
+    #             for value in enum_metadata.values:
+    #                 print(f"\t\t{value}")
 
 # Example usage:
 # db_manager = DatabaseManager(db_url="postgresql://user:pass@localhost/db")

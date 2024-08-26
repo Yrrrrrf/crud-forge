@@ -211,7 +211,7 @@ def delete_route(
             db.rollback()
             raise HTTPException(status_code=400, detail=str(e))
 
-def generate_crud(
+def gen_crud(
         sqlalchemy_model: Type[Base],
         pydantic_model: Type[BaseModel],
         router: APIRouter,
