@@ -23,7 +23,7 @@ CRUD FORGE is a powerful Python package that revolutionizes the creation of CRUD
 Install CRUD FORGE using pip:
 
 ```bash
-pip install crud-forge==0.1.6
+pip install crud-forge==0.1.7
 ```
 
 ## Quick Start
@@ -41,20 +41,21 @@ from crud_forge.routes import generate_metadata_routes, generate_default_routes
 app = FastAPI()
 db_manager = DatabaseManager(db_url="postgresql://user:password@localhost/dbname")
 
-# Generate default routes
+metadata = db_manager.metadata  # get the metadata from the database
+
+# recieve the fastapi app to generate default routes
 generate_default_routes(app)
 
 # Generate metadata routes
-metadata_router = generate_metadata_routes(db_manager.metadata, db_manager.get_db)
-app.include_router(metadata_router)
+app.include_router(generate_metadata_routes(metadata, db_manager.get_db))
 
 # Automatically generate models from database metadata
-models = generate_models_from_metadata(db_manager.metadata)
+models = generate_models_from_metadata(metadata)
 
 # Generate CRUD routes for all models
-for schema, schema_models in models.items():
-    for table_name, (sqlalchemy_model, pydantic_model) in schema_models.items():
-        generate_crud(sqlalchemy_model, pydantic_model, app, db_manager.get_db, tags=[f"{schema}_{table_name}"])
+for schema, models in models.items():
+    for table_name, (sqlalchemy_model, pydantic_model) in models.items():
+        generate_crud(sqlalchemy_model, pydantic_model, app, db_manager.get_db)
 
 # Run the app
 if __name__ == "__main__":
@@ -85,7 +86,7 @@ db_manager = DatabaseManager(
     db_type="postgresql",
     user="user",
     password="password",
-    host="localhost",D
+    host="localhost",
     database="dbname"
 )
 ```
@@ -107,8 +108,8 @@ Generate CRUD routes for all your models dynamically:
 ```python
 from crud_forge.crud import generate_crud
 
-for schema, schema_models in models.items():
-    for table_name, (sqlalchemy_model, pydantic_model) in schema_models.items():
+for schema, models in models.items():
+    for table_name, (sqlalchemy_model, pydantic_model) in models.items():
         generate_crud(sqlalchemy_model, pydantic_model, app, db_manager.get_db, tags=[f"{schema}_{table_name}"])
 ```
 

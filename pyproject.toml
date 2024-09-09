@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"  # Use setuptools as the build backend
 
 [project]  # Project metadata
 name = "crud-forge"
-version = "0.1.6"
+version = "0.1.7"
 description = "A package for generating FastAPI CRUD operations and routes"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -22,6 +22,8 @@ dependencies = [
     "sqlalchemy>=2.0.30",
     "pydantic>=2.7.1",
     "psycopg2>=2.9.3",
+    # asyncpg
+    # psycopg2-binary
 ]
 
 # Optional dependencies for development

@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     # Package details
     name="crud-forge",
-    version="0.1.6",
+    version="0.1.7",
     description="A package for generating FastAPI CRUD operations and routes",
     url="https://github.com/Yrrrrrf/crud-forge",
     python_requires=">=3.10",

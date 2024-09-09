@@ -13,8 +13,9 @@ src/crud_forge.egg-info/dependency_links.txt
 src/crud_forge.egg-info/requires.txt
 src/crud_forge.egg-info/top_level.txt
 src/crud_forge/generators/__init__.py
-src/crud_forge/generators/crud.py
+src/crud_forge/generators/enums.py
 src/crud_forge/generators/models.py
-src/crud_forge/generators/routes.py
+src/crud_forge/generators/routes/__init__.py
+src/crud_forge/generators/routes/crud.py
 src/crud_forge/utils/__init__.py
 src/crud_forge/utils/helpers.py
