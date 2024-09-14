@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     # Package details
     name="crud-forge",
-    version="0.1.7",
+    version="0.2.0",
     description="A package for generating FastAPI CRUD operations and routes",
     url="https://github.com/Yrrrrrf/crud-forge",
     python_requires=">=3.10",
@@ -15,7 +15,7 @@ setup(
     # Package structure
     packages=find_packages(where="src"),  # Find packages in the src directory
     package_dir={"": "src"},            # Root package is in the src directory
-    package_data={"": ["docs/images/*.svg"]},  # Include all SVG files in the docs/images directory
+    package_data={"": ["docs/images/*.svg", "crud_forge/forge.py"]},  # Include forge.py
 
     install_requires=[  # Add dependencies (install_requires)
         "fastapi>=0.111.0",

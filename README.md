@@ -32,14 +32,14 @@ Here's how you can leverage CRUD FORGE's automatic generators:
 
 ```python
 from fastapi import FastAPI
-from crud_forge.db import DatabaseManager
-from crud_forge.models import generate_models_from_metadata
-from crud_forge.crud import generate_crud
-from crud_forge.routes import generate_metadata_routes, generate_default_routes
+from forge.db import DBForge
+from forge.models import generate_models_from_metadata
+from forge.crud import generate_crud
+from forge.routes import generate_metadata_routes, generate_default_routes
 
 # Set up FastAPI app and database
 app = FastAPI()
-db_manager = DatabaseManager(db_url="postgresql://user:password@localhost/dbname")
+db_manager = DBForge(db_url="postgresql://user:password@localhost/dbname")
 
 metadata = db_manager.metadata  # get the metadata from the database
 
@@ -73,16 +73,16 @@ This example automatically generates models and CRUD routes for your entire data
 
 ### Database Connection
 
-Use the `DatabaseManager` to set up your database connection:
+Use the `DBForge` to set up your database connection:
 
 ```python
-from crud_forge.db import DatabaseManager
+from forge.db import DBForge
 
 # Using a database URL
-db_manager = DatabaseManager(db_url="postgresql://user:password@localhost/dbname")
+db_manager = DBForge(db_url="postgresql://user:password@localhost/dbname")
 
 # Or using individual parameters
-db_manager = DatabaseManager(
+db_manager = DBForge(
     db_type="postgresql",
     user="user",
     password="password",
@@ -96,7 +96,7 @@ db_manager = DatabaseManager(
 Use `generate_models_from_metadata` to automatically create models:
 
 ```python
-from crud_forge.models import generate_models_from_metadata
+from forge.models import generate_models_from_metadata
 
 models = generate_models_from_metadata(db_manager.metadata)
 ```
@@ -106,7 +106,7 @@ models = generate_models_from_metadata(db_manager.metadata)
 Generate CRUD routes for all your models dynamically:
 
 ```python
-from crud_forge.crud import generate_crud
+from forge.crud import generate_crud
 
 for schema, models in models.items():
     for table_name, (sqlalchemy_model, pydantic_model) in models.items():
@@ -118,7 +118,7 @@ for schema, models in models.items():
 CRUD FORGE includes built-in routes to explore your database structure:
 
 ```python
-from crud_forge.routes import generate_metadata_routes
+from forge.routes import generate_metadata_routes
 
 metadata_router = generate_metadata_routes(db_manager.metadata, db_manager.get_db)
 app.include_router(metadata_router)
@@ -135,7 +135,7 @@ This will create the following endpoints:
 CRUD FORGE can generate some default routes for your application:
 
 ```python
-from crud_forge.routes import generate_default_routes
+from forge.routes import generate_default_routes
 
 generate_default_routes(app)
 ```
