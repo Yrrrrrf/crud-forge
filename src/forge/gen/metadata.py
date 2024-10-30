@@ -5,22 +5,22 @@ from sqlalchemy import MetaData
 
 
 class ColumnMetadata(BaseModel):
-    name: str
+    name: str  # Column name
     type: str
     is_primary_key: bool
     is_foreign_key: bool = False
 
 class TableMetadata(BaseModel):
-    name: str
+    name: str  # Table name
     columns: List[ColumnMetadata] = []
 
 class SchemaMetadata(BaseModel):
-    name: str
+    name: str  # Schema name
     tables: Dict[str, TableMetadata] = {}
 
 
 def get_metadata_router(metadata: MetaData, prefix: str = "/dt") -> APIRouter:
-    dt_router: APIRouter = APIRouter(prefix=prefix)
+    dt_router: APIRouter = APIRouter(prefix=prefix, tags=["METADATA"])
 
     @dt_router.get("/schemas", response_model=List[SchemaMetadata])
     def get_schemas():

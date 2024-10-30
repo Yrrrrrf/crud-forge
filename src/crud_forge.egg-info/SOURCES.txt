@@ -13,6 +13,7 @@ src/crud_forge.egg-info/top_level.txt
 src/forge/__init__.py
 src/forge/db.py
 src/forge/gen/crud.py
+src/forge/gen/fn.py
+src/forge/gen/metadata.py
 src/forge/utils/__init__.py
-src/forge/utils/helpers.py
 src/forge/utils/sql_types.py

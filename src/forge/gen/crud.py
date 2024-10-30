@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import Table
 from pydantic import BaseModel
 from enum import Enum
+from sqlalchemy import Enum as SQLAlchemyEnum
+from enum import Enum as PyEnum
 
 def _get_route_params(
     table: Table, 
@@ -54,7 +56,7 @@ def create_route(
 def get_route(
         table: Table,
         pydantic_model: Type[BaseModel],
-        sqlalchemy_model: Type[Any],  # ^ Added sqlalchemy_model parameter
+        sqlalchemy_model: Type[Any],
         router: APIRouter,
         db_dependency: Callable,
         tags: Optional[List[Union[str, Enum]]] = None
@@ -65,12 +67,22 @@ def get_route(
             db: Session = Depends(db_dependency),
             filters: pydantic_model = Depends()
     ) -> List[pydantic_model]:
-        query = db.query(sqlalchemy_model)  # ^ Use sqlalchemy_model instead of table
+        query = db.query(sqlalchemy_model)
         filters_dict: Dict[str, Any] = filters.model_dump(exclude_unset=True)
 
         for column_name, value in filters_dict.items():
             if value is not None:
-                query = query.filter(getattr(sqlalchemy_model, column_name) == value)
+                column = getattr(sqlalchemy_model, column_name)
+                if isinstance(column.type, SQLAlchemyEnum):
+                    # Handle enum values
+                    if isinstance(value, str):
+                        # If the value is a string, use it directly
+                        query = query.filter(column == value)
+                    elif isinstance(value, PyEnum):
+                        # If the value is an Enum, use its value
+                        query = query.filter(column == value.value)
+                else:
+                    query = query.filter(column == value)
 
         resources = query.all()
         return [pydantic_model.model_validate(resource.__dict__) for resource in resources]
@@ -124,6 +136,9 @@ def update_route(
             db.rollback()
             raise HTTPException(status_code=400, detail=f"Update failed: {str(e)}")
 
+# todo: Fix the error, when deleting some object, it returns a Null object
+# todo: instead of the object that was deleted
+# todo:     (e.g. {"message": "1 resource(s) deleted successfully", "deleted_resources": [null]})
 def delete_route(
         table: Table,
         pydantic_model: Type[BaseModel],

@@ -77,7 +77,8 @@ class APIForge(BaseModel):
         self.pydantic_models[table.name] = model
         return model
 
-    def _get_sqlalchemy_model(self,
+    def _get_sqlalchemy_model(
+        self,
         table: Table, 
         include_columns: Optional[list[str]] = None,
         exclude_columns: Optional[list[str]] = None,
@@ -99,14 +100,22 @@ class APIForge(BaseModel):
             return self.sqlalchemy_models[table.name]
 
         class_attrs: Dict[str, Any] = {
-            '__table__': table,
             '__tablename__': table.name,
+            '__table__': table,
         }
+
+        # Check if it's a view
+        if self.db_manager.is_view(f"{table.schema}.{table.name}" if table.schema else table.name):
+            # For views, we need to:
+            # 1. Set abstract=True to prevent SQLAlchemy from validating the primary key
+            class_attrs['__abstract__'] = True
+            # 2. Mark it as a view
+            class_attrs['__is_view__'] = True
 
         # Process columns based on include and exclude lists
         for column in table.columns:
             if (include_columns is None or column.name in include_columns) and \
-               (exclude_columns is None or column.name not in exclude_columns):
+            (exclude_columns is None or column.name not in exclude_columns):
                 class_attrs[column.name] = column
 
         # Add or override with custom columns

@@ -4,7 +4,7 @@ from sqlalchemy.engine import Engine, create_engine
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.ext.automap import automap_base
-from typing import Dict, Generator, List, Optional, Any, Type, Union
+from typing import Dict, Generator, List, Optional, Any, Type, Union, Set
 from enum import Enum
 import logging
 
@@ -66,6 +66,7 @@ class DBForge(BaseModel):
     metadata: MetaData = Field(default_factory=MetaData)
     Base: Any = Field(default_factory=automap_base)
     SessionLocal: sessionmaker = Field(default=None)
+    view_names: Set[str] = Field(default_factory=set, description="Store view names")
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -75,14 +76,6 @@ class DBForge(BaseModel):
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         self._test_connection()
         self._load_metadata()
-        # todo: Add support for views & enums
-        # ^ Views are not reflected by default (this means that they are not available in the metadata)
-        # self.metadata.reflect(self.engine, views=True)
-        # ^ By adding the views=True parameter, we can reflect views as well
-        # ^ This will allow us to access the view objects in the metadata
-        # ^ To access a view object, use self.metadata.tables['view_name']
-        # ^ The only way to differentiate between tables and views is by checking the .is_view attribute
-        # ^ So, to check if a table is a view, use self.metadata.tables['view_name'].is_view
 
     def _test_connection(self):
         try:
@@ -94,25 +87,47 @@ class DBForge(BaseModel):
     def _load_metadata(self) -> None:
         try:
             inspector = inspect(self.engine)
+            
+            # Reset views set
+            self.view_names.clear()
+            
             for schema in inspector.get_schema_names():
                 if schema in ['information_schema', 'pg_catalog']:
                     continue
                 logger.info(f"[Schema] {gray(schema)}")
 
-                for table in inspector.get_table_names(schema=schema):
-                    Table(table, self.metadata, autoload_with=self.engine, schema=schema)
+                # Load tables and track views
+                for view_name in inspector.get_view_names(schema=schema):
+                    full_name = f"{schema}.{view_name}" if schema else view_name
+                    self.view_names.add(full_name)
+                    Table(view_name, self.metadata, autoload_with=self.engine, schema=schema)
+                    logger.debug(f"Loaded view: {full_name}")
+
+                # Load regular tables
+                for table_name in inspector.get_table_names(schema=schema):
+                    full_name = f"{schema}.{table_name}" if schema else table_name
+                    if full_name not in self.view_names:  # Skip if already loaded as view
+                        Table(table_name, self.metadata, autoload_with=self.engine, schema=schema)
+                        logger.debug(f"Loaded table: {full_name}")
 
             self.Base.prepare(self.engine, reflect=True)
 
             if not self.metadata.tables:
-                logger.warning("No tables found in the database after reflection.")
+                logger.warning("No tables or views found in the database after reflection.")
             else:
+                total_views = len(self.view_names)
+                total_tables = len(self.metadata.tables) - total_views
                 logger.info(f" {gray('Metadata loaded successfully')}")
                 logger.info(f"Found {len(inspector.get_schema_names()) - 1} schemas")
-                logger.info(f"Found {len(self.metadata.tables)} tables")
+                logger.info(f"Found {total_tables} tables and {total_views} views")
 
         except Exception as e:
             logger.error(f"Error during metadata reflection: {str(e)}")
+            raise
+
+    def is_view(self, name: str) -> bool:
+        """Check if a given table name corresponds to a view."""
+        return name in self.view_names
 
     def exec_raw_sql(self, query: str) -> CursorResult:
         with self.engine.connect() as connection:
@@ -125,7 +140,6 @@ class DBForge(BaseModel):
         finally:
             db.close()
 
-
     # * GET METHODS
 
     def get_table(self, table_name: str, schema: Optional[str] = None) -> Table:
@@ -133,35 +147,41 @@ class DBForge(BaseModel):
         full_name = f"{schema}.{table_name}" if schema else table_name
         if full_name not in self.metadata.tables:
             raise ValueError(f"Table {full_name} not found in the database")
+        if self.is_view(full_name):
+            raise ValueError(f"{full_name} is a view, not a table. Use get_view() instead.")
         return self.metadata.tables[full_name]
 
     def get_view(self, view_name: str, schema: Optional[str] = None) -> Table:
         """Get a SQLAlchemy Table object representing a view."""
         full_name = f"{schema}.{view_name}" if schema else view_name
-        if full_name not in self.metadata.tables or not self.metadata.tables[full_name].is_view:
+        if full_name not in self.metadata.tables:
             raise ValueError(f"View {full_name} not found in the database")
+        if not self.is_view(full_name):
+            raise ValueError(f"{full_name} is a table, not a view. Use get_table() instead.")
         return self.metadata.tables[full_name]
 
     def get_tables(self, schema: Optional[str] = None) -> Dict[str, Table]:
         """Get a dictionary of SQLAlchemy Table objects (excluding views)."""
         return {
-            table_name: table
-            for table_name, table in self.metadata.tables.items()
-            if (schema is None or table.schema == schema) and not table.is_view
+            name: table
+            for name, table in self.metadata.tables.items()
+            if (schema is None or table.schema == schema) and not self.is_view(name)
         }
 
     def get_views(self, schema: Optional[str] = None) -> Dict[str, Table]:
         """Get a dictionary of SQLAlchemy Table objects representing views."""
         return {
-            view_name: view
-            for view_name, view in self.metadata.tables.items()
-            if (schema is None or view.schema == schema) and view.is_view
+            name: view
+            for name, view in self.metadata.tables.items()
+            if (schema is None or view.schema == schema) and self.is_view(name)
         }
 
     def get_all_tables(self) -> Dict[str, Table]:
         """Get all tables across all schemas (excluding views)."""
-        return {name: table for name, table in self.metadata.tables.items() if not table.is_view}
+        return {name: table for name, table in self.metadata.tables.items() 
+                if not self.is_view(name)}
 
     def get_all_views(self) -> Dict[str, Table]:
         """Get all views across all schemas."""
-        return {name: view for name, view in self.metadata.tables.items() if view.is_view}
+        return {name: view for name, view in self.metadata.tables.items() 
+                if self.is_view(name)}
