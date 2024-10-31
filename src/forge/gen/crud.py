@@ -1,234 +1,237 @@
 from typing import Callable, List, Dict, Any, Optional, Type, Union
+from forge.utils import *
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import Table
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, create_model, Field
 from enum import Enum
 from sqlalchemy import Enum as SQLAlchemyEnum
 from enum import Enum as PyEnum
 
-def _get_route_params(
-    table: Table, 
-    response_model: Type[Any], 
-    tags: Optional[List[Union[str, Enum]]] = None
-) -> Dict[str, Any]:
-    """Generate route parameters for FastAPI router decorators."""
-    route_params = {
-        "path": f"/{table.name.lower()}",
-        "response_model": response_model
-    }
-    if tags: route_params["tags"] = tags
-    return route_params
 
-# * CRUD routes
-
-def create_route(
-        table: Table,
-        pydantic_model: Type[BaseModel],
-        sqlalchemy_model: Type[Any],  # ^ Added sqlalchemy_model parameter
-        router: APIRouter,
-        db_dependency: Callable,
-        tags: Optional[List[Union[str, Enum]]] = None
-) -> None:
-    """Add a CREATE route for a specific table."""
+class CRUD:
+    """Class to handle CRUD operations with FastAPI routes."""
     
-    @router.post(**_get_route_params(table, pydantic_model, tags))
-    def create_resource(
-            resource: pydantic_model,
-            db: Session = Depends(db_dependency)
-    ) -> pydantic_model:
-        data = resource.model_dump(exclude_unset=True)
-        for column in table.columns:
-            if column.type.python_type == uuid.UUID:
-                data.pop(column.name, None)
-        try:
-            db_resource = sqlalchemy_model(**data)  # ^ Use sqlalchemy_model instead of DynamicModel
-            db.add(db_resource)
-            db.commit()
-            db.refresh(db_resource)
-            result_dict = {column.name: getattr(db_resource, column.name) for column in table.columns}
-            return pydantic_model(**result_dict)
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(status_code=400, detail=f"Creation failed: {str(e)}")
-
-def get_route(
+    def __init__(
+        self,
         table: Table,
         pydantic_model: Type[BaseModel],
         sqlalchemy_model: Type[Any],
         router: APIRouter,
         db_dependency: Callable,
-        tags: Optional[List[Union[str, Enum]]] = None
-) -> None:
-    """Add a GET route for a specific table."""
-    
-    # Create a proper Pydantic model for query parameters
-    query_fields = {
-        field_name: (Optional[field.annotation], None) 
-        for field_name, field in pydantic_model.model_fields.items()
-    }
-    
-    QueryParams = create_model(
-        f"{pydantic_model.__name__}QueryParams",
-        **query_fields,
-        __base__=BaseModel
-    )
+        tags: Optional[List[Union[str, Enum]]] = None,
+        prefix: str = ""
+    ):
+        """Initialize CRUD handler with common parameters."""
+        self.table = table
+        self.pydantic_model = pydantic_model
+        self.sqlalchemy_model = sqlalchemy_model
+        self.router = router
+        self.db_dependency = db_dependency
+        self.tags = tags
+        self.prefix = prefix
+        
+        # Create query params model once for reuse
+        self.query_params = self._create_query_params()
 
-    @router.get(
-        **_get_route_params(table, List[pydantic_model], tags),
-        summary=f"Get {table.name} resources",
-        description=f"Retrieve {table.name} records with optional filtering"
-    )
-    def read_resources(
-            db: Session = Depends(db_dependency),
-            filters: QueryParams = Depends()
-    ) -> List[pydantic_model]:
-        query_obj = db.query(sqlalchemy_model)
-        filters_dict = filters.model_dump(exclude_unset=True)
+    def _create_query_params(self) -> Type[BaseModel]:
+        """Create a Pydantic model for query parameters."""
+        query_fields = {}
+        
+        # Get fields from pydantic model
+        for field_name, field in self.pydantic_model.__annotations__.items():
+            # Make all fields optional for query params
+            if hasattr(field, "__origin__") and field.__origin__ is Union:
+                # If field is already Optional
+                query_fields[field_name] = (field, Field(default=None))
+            else:
+                # Make field Optional
+                query_fields[field_name] = (Optional[field], Field(default=None))
+        
+        # Create the query params model
+        return create_model(
+            f"{self.pydantic_model.__name__}QueryParams",
+            **query_fields,
+            __base__=BaseModel
+        )
 
-        for column_name, value in filters_dict.items():
-            if value is not None:
-                column = getattr(sqlalchemy_model, column_name)
-                if isinstance(column.type, SQLAlchemyEnum):
-                    # Handle enum values
-                    if isinstance(value, str):
-                        query_obj = query_obj.filter(column == value)
-                    elif isinstance(value, PyEnum):
-                        query_obj = query_obj.filter(column == value.value)
-                else:
-                    query_obj = query_obj.filter(column == value)
+    def _get_route_path(self, operation: str = "") -> str:
+        """Generate route path with optional prefix."""
+        base_path = f"/{self.table.name.lower()}"
+        if operation:
+            base_path = f"{base_path}/{operation}"
+        return f"{self.prefix}{base_path}"
 
-        resources = query_obj.all()
-        return [pydantic_model.model_validate(resource.__dict__) for resource in resources]
+    def create(self) -> None:
+        """Add CREATE route."""
+        @self.router.post(
+            self._get_route_path(),
+            response_model=self.pydantic_model,
+            tags=self.tags,
+            summary=f"Create {self.table.name}",
+            description=f"Create a new {self.table.name} record"
+        )
+        def create_resource(
+            resource: self.pydantic_model,
+            db: Session = Depends(self.db_dependency)
+        ) -> self.pydantic_model:
+            data = resource.model_dump(exclude_unset=True)
+            
+            # Handle UUID fields
+            for column in self.table.columns:
+                if column.type.python_type == uuid.UUID:
+                    data.pop(column.name, None)
+                    
+            try:
+                db_resource = self.sqlalchemy_model(**data)
+                db.add(db_resource)
+                db.commit()
+                db.refresh(db_resource)
+                result_dict = {
+                    column.name: getattr(db_resource, column.name) 
+                    for column in self.table.columns
+                }
+                return self.pydantic_model(**result_dict)
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(status_code=400, detail=f"Creation failed: {str(e)}")
 
+    def read(self) -> None:
+        """Add READ route."""
+        @self.router.get(
+            self._get_route_path(),
+            response_model=List[self.pydantic_model],
+            tags=self.tags,
+            summary=f"Get {self.table.name} resources",
+            description=f"Retrieve {self.table.name} records with optional filtering"
+        )
+        def read_resources(
+            db: Session = Depends(self.db_dependency),
+            filters: self.query_params = Depends()
+        ) -> List[self.pydantic_model]:
+            query = db.query(self.sqlalchemy_model)
+            filters_dict = filters.model_dump(exclude_unset=True)
 
-def update_route(
-        table: Table,
-        pydantic_model: Type[BaseModel],
-        sqlalchemy_model: Type[Any],  # ^ Added sqlalchemy_model parameter
-        router: APIRouter,
-        db_dependency: Callable,
-        tags: Optional[List[Union[str, Enum]]] = None
-) -> None:
-    """Add an UPDATE route for a specific table."""
-    
-    @router.put(**_get_route_params(table, Dict[str, Any], tags))
-    def update_resource(
-            resource: pydantic_model,
-            db: Session = Depends(db_dependency),
-            query_params: pydantic_model = Depends()
-    ) -> Dict[str, Any]:
-        update_data = resource.model_dump(exclude_unset=True)
-        filters_dict = query_params.model_dump(exclude_unset=True)
+            for column_name, value in filters_dict.items():
+                if value is not None:
+                    column = getattr(self.sqlalchemy_model, column_name)
+                    if isinstance(column.type, SQLAlchemyEnum):
+                        if isinstance(value, str):
+                            query = query.filter(column == value)
+                        elif isinstance(value, PyEnum):
+                            query = query.filter(column == value.value)
+                    else:
+                        query = query.filter(column == value)
 
-        if not filters_dict:
-            raise HTTPException(status_code=400, detail="No filters provided.")
+            resources = query.all()
+            return [
+                self.pydantic_model.model_validate(resource.__dict__) 
+                for resource in resources
+            ]
 
-        try:
-            query = db.query(sqlalchemy_model)
+    def update(self) -> None:
+        """Add UPDATE route."""
+        @self.router.put(
+            self._get_route_path(),
+            response_model=Dict[str, Any],
+            tags=self.tags,
+            summary=f"Update {self.table.name}",
+            description=f"Update {self.table.name} records that match the filter criteria"
+        )
+        def update_resource(
+            resource: self.pydantic_model,
+            db: Session = Depends(self.db_dependency),
+            filters: self.query_params = Depends()
+        ) -> Dict[str, Any]:
+            update_data = resource.model_dump(exclude_unset=True)
+            filters_dict = filters.model_dump(exclude_unset=True)
 
+            if not filters_dict:
+                raise HTTPException(status_code=400, detail="No filters provided")
+
+            try:
+                query = db.query(self.sqlalchemy_model)
+                for attr, value in filters_dict.items():
+                    if value is not None:
+                        query = query.filter(getattr(self.sqlalchemy_model, attr) == value)
+
+                old_data = [
+                    self.pydantic_model.model_validate(data.__dict__) 
+                    for data in query.all()
+                ]
+
+                if not old_data:
+                    raise HTTPException(status_code=404, detail="No matching resources found")
+
+                updated_count = query.update(update_data)
+                db.commit()
+
+                updated_data = [
+                    self.pydantic_model.model_validate(data.__dict__) 
+                    for data in query.all()
+                ]
+
+                return {
+                    "updated_count": updated_count,
+                    "old_data": [d.model_dump() for d in old_data],
+                    "updated_data": [d.model_dump() for d in updated_data]
+                }
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(status_code=400, detail=f"Update failed: {str(e)}")
+
+    def delete(self) -> None:
+        """Add DELETE route."""
+        @self.router.delete(
+            self._get_route_path(),
+            response_model=Dict[str, Any],
+            tags=self.tags,
+            summary=f"Delete {self.table.name}",
+            description=f"Delete {self.table.name} records that match the filter criteria"
+        )
+        def delete_resource(
+            db: Session = Depends(self.db_dependency),
+            filters: self.query_params = Depends()
+        ) -> Dict[str, Any]:
+            filters_dict = filters.model_dump(exclude_unset=True)
+            
+            if not filters_dict:
+                raise HTTPException(status_code=400, detail="No filters provided")
+
+            query = db.query(self.sqlalchemy_model)
             for attr, value in filters_dict.items():
                 if value is not None:
-                    query = query.filter(getattr(sqlalchemy_model, attr) == value)
-
-            old_data = [pydantic_model.model_validate(data.__dict__) for data in query.all()]
-
-            if not old_data:
-                raise HTTPException(status_code=404, detail="No matching resources found.")
-
-            updated_count = query.update(update_data)
-            db.commit()
-
-            updated_data = [pydantic_model.model_validate(data.__dict__) for data in query.all()]
-
-            return {
-                "updated_count": updated_count,
-                "old_data": [d.model_dump() for d in old_data],
-                "updated_data": [d.model_dump() for d in updated_data]
-            }
-
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(status_code=400, detail=f"Update failed: {str(e)}")
-
-# todo: Fix the error, when deleting some object, it returns a Null object
-# todo: instead of the object that was deleted
-# todo:     (e.g. {"message": "1 resource(s) deleted successfully", "deleted_resources": [null]})
-def delete_route(
-        table: Table,
-        pydantic_model: Type[BaseModel],
-        sqlalchemy_model: Type[Any],  # ^ Added sqlalchemy_model parameter
-        router: APIRouter,
-        db_dependency: Callable,
-        tags: Optional[List[Union[str, Enum]]] = None
-) -> None:
-    """Add a DELETE route for a specific table."""
-
-    @router.delete(**_get_route_params(table, Dict[str, Any], tags))
-    def delete_resource(
-            db: Session = Depends(db_dependency),
-            query_params: pydantic_model = Depends()
-    ) -> Dict[str, Any]:
-        filters_dict = query_params.model_dump(exclude_unset=True)
-        
-        if not filters_dict:
-            raise HTTPException(status_code=400, detail="No filters provided")
-
-        query = db.query(sqlalchemy_model)
-        for attr, value in filters_dict.items():
-            if value is not None:
-                query = query.filter(getattr(sqlalchemy_model, attr) == value)
-        
-        try:
-            deleted = query.all()
-            if not deleted:
-                return {"message": "No resources found matching the criteria"}
+                    query = query.filter(getattr(self.sqlalchemy_model, attr) == value)
             
-            deleted_count = query.delete(synchronize_session=False)
-            db.commit()
-            
-            return {"message": f"{deleted_count} resource(s) deleted successfully", "deleted_resources": [pydantic_model.model_validate(d.__dict__).model_dump() for d in deleted]}
-        except Exception as e:
-            db.rollback()
-            raise HTTPException(status_code=400, detail=f"Deletion failed: {str(e)}")
+            try:
+                # Get resources before deletion
+                to_delete = query.all()
+                if not to_delete:
+                    return {"message": "No resources found matching the criteria"}
+                
+                # Store the data before deletion
+                deleted_resources = [
+                    self.pydantic_model.model_validate(resource.__dict__).model_dump() 
+                    for resource in to_delete
+                ]
+                
+                # Perform deletion
+                deleted_count = query.delete(synchronize_session=False)
+                db.commit()
+                
+                return {
+                    "message": f"{deleted_count} resource(s) deleted successfully",
+                    "deleted_resources": deleted_resources
+                }
+            except Exception as e:
+                db.rollback()
+                raise HTTPException(status_code=400, detail=f"Deletion failed: {str(e)}")
 
-# * All CRUD routes
-
-def gen_crud(
-        table: Table,
-        pydantic_model: Type[BaseModel],
-        sqlalchemy_model: Type[Any],  # ^ Added sqlalchemy_model parameter
-        router: APIRouter,
-        db_dependency: Callable,
-        tags: Optional[List[Union[str, Enum]]] = None
-) -> None:
-    """Generate CRUD routes for a specific table."""
-    [func(table, pydantic_model, sqlalchemy_model, router, db_dependency, tags) for func in [
-        create_route, get_route, update_route, delete_route
-    ]]
-
-#     def _should_generate_routes(self, table: Table) -> bool:
-#         schema = table.schema or 'public'
-#         schema_included = not self.include_schemas or schema in self.include_schemas
-#         table_not_excluded = table.name not in self.exclude_tables
-#         return schema_included and table_not_excluded
-
-#     def _genr_table_crud(self, table: Table, db_dependency: Callable) -> None:
-#         pydantic_model = self._get_pydantic_model(table)
-#         sqlalchemy_model = self._get_sqlalchemy_model(table)
-
-#         for route_generator in [create_route, get_route, update_route, delete_route]:
-#             route_generator(
-#                 table=table,
-#                 pydantic_model=pydantic_model,
-#                 sqlalchemy_model=sqlalchemy_model,
-#                 router=self.router,
-#                 db_dependency=db_dependency
-#             )
-
-#     def genr_crud(self) -> APIRouter:
-#         for _, table in self.db_manager.metadata.tables.items():
-#             if self._should_generate_routes(table):
-#                 self._genr_table_crud(table, self.db_manager.get_db)
-#         return self.router
+    def generate_all(self) -> None:
+        """Generate all CRUD routes."""
+        # print(f"\tGen {gray("CRUD")} -> {self.table.name}")
+        self.create()
+        self.read()
+        self.update()
+        self.delete()

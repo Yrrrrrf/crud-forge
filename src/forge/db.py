@@ -231,7 +231,7 @@ class DBForge(BaseModel):
 
         print(f"{gray('Connected to')} {bold(database)} {gray('as')} {bold(user)}")
         print(f"{gray('Database version:')} {bold(self.get_db_version())}")
-        
+
         if not self.metadata.tables:
             print(f"{yellow('No tables or views found in the database after reflection.')}")
             return

@@ -51,7 +51,6 @@ model_forge: ModelForge = ModelForge(db_manager=db_manager)
 # * Print the models
 # [print(f"{bold('Models')} {table}") for table in model_forge.models.keys()]
 # [print(f"{bold('PyEnum:')} {table}") for table in model_forge.enum_cache.values()]
-# [print(f"{bold('PyEnum:')} {table}") for table in model_forge.values()]
 
 api_forge = APIForge(model_forge=model_forge, config=APIConfig(
     include_schemas=["public", "pharma", "management"],
@@ -62,8 +61,3 @@ api_forge = APIForge(model_forge=model_forge, config=APIConfig(
 api_forge.generate_routes()
 # # * Print the routers
 [app.include_router(router) for router in api_forge.routers.values()]
-
-# api_forge.add_view_routes(
-# Print enum information
-
-# )

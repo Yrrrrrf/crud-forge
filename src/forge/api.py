@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import Table, inspect
 from .model import ModelForge
-from .gen.crud import gen_crud, get_route
+from .gen.crud import CRUD
 import logging
 from forge.utils import *
 
@@ -91,13 +91,8 @@ class APIForge(BaseModel):
 
     def _get_schemas(self) -> List[str]:
         """Get relevant schemas based on configuration."""
-        db_schemas = {
-            table.schema or 'public' 
-            for table in self.model_forge.db_manager.metadata.tables.values()
-        }
-        
-        if self.config.include_schemas:
-            return sorted(set(self.config.include_schemas) & db_schemas)
+        db_schemas = {table.schema or 'public' for table in self.model_forge.db_manager.metadata.tables.values()}
+        if self.config.include_schemas: return sorted(set(self.config.include_schemas) & db_schemas)
         return sorted(db_schemas)
 
     def _analyze_tables(self) -> None:
@@ -127,18 +122,14 @@ class APIForge(BaseModel):
                 foreign_keys=fk_dict
             )
 
-    def generate_routes(self) -> None:
+    def gen_table_routes(self) -> None:
         """Generate routes for all tables and views in the database.
         Tables get full CRUD operations while views typically get read-only routes."""
         for full_name, info in self.table_info.items():
             # Skip excluded tables
-            if info.name in self.config.exclude_tables:
-                logger.info(f"Skipping excluded table/view: {full_name}")
-                continue
+            if info.name in self.config.exclude_tables: continue
 
             try:
-                logger.info(f"Processing {full_name} ({'view' if info.is_view else 'table'})")
-                
                 # Check if this is a view by looking for the 'v_' prefix
                 # This ensures consistent view detection
                 if info.is_view or info.name.startswith('v_'):
@@ -171,22 +162,15 @@ class APIForge(BaseModel):
             table = self.model_forge.db_manager.metadata.tables[full_table_name]
             # Get both Pydantic and SQLAlchemy models from ModelForge
             # The models are stored as a tuple (pydantic_model, sqlalchemy_model)
-            if full_table_name not in self.model_forge.models:
-                raise KeyError(f"No models found for {full_table_name}")
-                
-            pydantic_model, sqlalchemy_model = self.model_forge.models[full_table_name]
-            print(f"{table}\n\t{pydantic_model.__name__}\n\t{sqlalchemy_model.__name__}")
+            if full_table_name not in self.model_forge.models: raise KeyError(f"No models found for {full_table_name}")
 
-            # Generate all CRUD routes using the gen_crud utility
-            gen_crud(
-                table=table,
-                pydantic_model=pydantic_model,
-                sqlalchemy_model=sqlalchemy_model,
+            pydantic_model, sqlalchemy_model = self.model_forge.models[full_table_name]
+            # print(f"CRUD: {table}\n\t{pydantic_model.__name__}\n\t{sqlalchemy_model.__name__}")
+            CRUD(table=table, pydantic_model=pydantic_model, sqlalchemy_model=sqlalchemy_model,
                 router=self.routers[info.schema],  # Use the schema's main router
                 db_dependency=self.model_forge.db_manager.get_db,
                 tags=[info.schema.upper()] if self.config.enable_tags else None
-            )
-            
+            ).generate_all()
         except Exception as e:
             logger.error(f"Error generating routes for table {full_table_name}: {str(e)}")
             raise
