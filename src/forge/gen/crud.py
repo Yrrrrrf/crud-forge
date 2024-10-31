@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import Table
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 from enum import Enum
 from sqlalchemy import Enum as SQLAlchemyEnum
 from enum import Enum as PyEnum
@@ -62,13 +62,30 @@ def get_route(
         tags: Optional[List[Union[str, Enum]]] = None
 ) -> None:
     """Add a GET route for a specific table."""
-    @router.get(**_get_route_params(table, List[pydantic_model], tags))
+    
+    # Create a proper Pydantic model for query parameters
+    query_fields = {
+        field_name: (Optional[field.annotation], None) 
+        for field_name, field in pydantic_model.model_fields.items()
+    }
+    
+    QueryParams = create_model(
+        f"{pydantic_model.__name__}QueryParams",
+        **query_fields,
+        __base__=BaseModel
+    )
+
+    @router.get(
+        **_get_route_params(table, List[pydantic_model], tags),
+        summary=f"Get {table.name} resources",
+        description=f"Retrieve {table.name} records with optional filtering"
+    )
     def read_resources(
             db: Session = Depends(db_dependency),
-            filters: pydantic_model = Depends()
+            filters: QueryParams = Depends()
     ) -> List[pydantic_model]:
-        query = db.query(sqlalchemy_model)
-        filters_dict: Dict[str, Any] = filters.model_dump(exclude_unset=True)
+        query_obj = db.query(sqlalchemy_model)
+        filters_dict = filters.model_dump(exclude_unset=True)
 
         for column_name, value in filters_dict.items():
             if value is not None:
@@ -76,16 +93,15 @@ def get_route(
                 if isinstance(column.type, SQLAlchemyEnum):
                     # Handle enum values
                     if isinstance(value, str):
-                        # If the value is a string, use it directly
-                        query = query.filter(column == value)
+                        query_obj = query_obj.filter(column == value)
                     elif isinstance(value, PyEnum):
-                        # If the value is an Enum, use its value
-                        query = query.filter(column == value.value)
+                        query_obj = query_obj.filter(column == value.value)
                 else:
-                    query = query.filter(column == value)
+                    query_obj = query_obj.filter(column == value)
 
-        resources = query.all()
+        resources = query_obj.all()
         return [pydantic_model.model_validate(resource.__dict__) for resource in resources]
+
 
 def update_route(
         table: Table,
@@ -191,3 +207,28 @@ def gen_crud(
     [func(table, pydantic_model, sqlalchemy_model, router, db_dependency, tags) for func in [
         create_route, get_route, update_route, delete_route
     ]]
+
+#     def _should_generate_routes(self, table: Table) -> bool:
+#         schema = table.schema or 'public'
+#         schema_included = not self.include_schemas or schema in self.include_schemas
+#         table_not_excluded = table.name not in self.exclude_tables
+#         return schema_included and table_not_excluded
+
+#     def _genr_table_crud(self, table: Table, db_dependency: Callable) -> None:
+#         pydantic_model = self._get_pydantic_model(table)
+#         sqlalchemy_model = self._get_sqlalchemy_model(table)
+
+#         for route_generator in [create_route, get_route, update_route, delete_route]:
+#             route_generator(
+#                 table=table,
+#                 pydantic_model=pydantic_model,
+#                 sqlalchemy_model=sqlalchemy_model,
+#                 router=self.router,
+#                 db_dependency=db_dependency
+#             )
+
+#     def genr_crud(self) -> APIRouter:
+#         for _, table in self.db_manager.metadata.tables.items():
+#             if self._should_generate_routes(table):
+#                 self._genr_table_crud(table, self.db_manager.get_db)
+#         return self.router
