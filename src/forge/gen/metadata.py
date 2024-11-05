@@ -28,7 +28,7 @@ def get_metadata_router(metadata: MetaData, prefix: str = "/dt") -> APIRouter:
         for table in metadata.tables.values():
             if table.schema not in schemas:
                 schemas[table.schema] = SchemaMetadata(name=table.schema)
-            
+
             table_metadata = TableMetadata(name=table.name)
             for column in table.columns:
                 column_metadata = ColumnMetadata(

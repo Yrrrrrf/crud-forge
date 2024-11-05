@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: crud-forge
-Version: 0.2.2
+Version: 0.3.1
 Summary: A package for generating FastAPI CRUD operations and routes
 Home-page: https://github.com/Yrrrrrf/crud-forge
 Author: Yrrrrrf

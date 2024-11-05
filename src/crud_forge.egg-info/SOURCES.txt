@@ -3,15 +3,14 @@ MANIFEST.in
 README.md
 pyproject.toml
 setup.py
-docs/conf.py
-docs/images/pkg.svg
 src/crud_forge.egg-info/PKG-INFO
 src/crud_forge.egg-info/SOURCES.txt
 src/crud_forge.egg-info/dependency_links.txt
 src/crud_forge.egg-info/requires.txt
 src/crud_forge.egg-info/top_level.txt
-src/forge/__init__.py
+src/forge/api.py
 src/forge/db.py
+src/forge/model.py
 src/forge/gen/crud.py
 src/forge/gen/fn.py
 src/forge/gen/metadata.py

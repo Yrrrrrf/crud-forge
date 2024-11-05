@@ -1,77 +1,97 @@
-
-# SQL_TYPE_MAPPING: Dict[str, Tuple[Type, Type]] = {
-#     r'uuid': (sqlalchemy.UUID, UUID),  # * Universally Unique IDentifier
- 
-#     # * String types
-#     r'varchar(\(\d+\))?': (sqlalchemy.String, str),
-#     r'character\s+varying(\(\d+\))?': (sqlalchemy.String, str),
-#     r'text': (sqlalchemy.Text, str),
-#     r'char(\(\d+\))?': (sqlalchemy.CHAR, str),
-
-#     # * Numeric types
-#     r'integer': (sqlalchemy.Integer, int),
-#     r'bigint': (sqlalchemy.BigInteger, int),
-#     r'smallint': (sqlalchemy.SmallInteger, int),
-#     r'decimal(\(\d+,\s*\d+\))?': (sqlalchemy.DECIMAL, Decimal),
-#     r'numeric(\(\d+,\s*\d+\))?': (sqlalchemy.DECIMAL, Decimal),
-#     r'real': (sqlalchemy.Float, float),
-#     r'double\s+precision': (sqlalchemy.Float, float),
-
-#     # * Discrete types
-#     r'bit': (sqlalchemy.Boolean, bool),
-#     r'bytea': (sqlalchemy.LargeBinary, bytes),
-#     r'boolean': (sqlalchemy.Boolean, bool),
-
-#     # * Date and Time types
-#     r'date': (sqlalchemy.Date, date),
-#     r'time(\(\d+\))?': (sqlalchemy.Time, time),
-#     r'timestamp(\(\d+\))?(\s+with(out)?\s+time\s+zone)?': (sqlalchemy.DateTime, datetime),
-#     r'interval': (sqlalchemy.Interval, timedelta),
-
-#     # * JSON types
-#     r'json': (sqlalchemy.JSON, dict),
-#     r'jsonb': (sqlalchemy.JSON, dict),
-
-#     # * Enum type (generic match, specific enums should be handled separately)
-#     r'enum': (sqlalchemy.Enum, str),
-
-#     # Array types
-#     r'(\w+)\[\]': (sqlalchemy.ARRAY, list),
-    
-#     # # * Network address types
-#     # r'inet': (sqlalchemy.dialects.postgresql.INET, str),
-#     # r'cidr': (sqlalchemy.dialects.postgresql.CIDR, str),
-#     # r'macaddr': (sqlalchemy.dialects.postgresql.MACADDR, str),
-    
-#     # # * Geometric types
-#     # r'point': (sqlalchemy.dialects.postgresql.POINT, tuple),
-#     # r'line': (sqlalchemy.dialects.postgresql.LINE, str),
-#     # r'lseg': (sqlalchemy.dialects.postgresql.LSEG, tuple),
-#     # r'box': (sqlalchemy.dialects.postgresql.BOX, tuple),
-#     # r'path': (sqlalchemy.dialects.postgresql.PATH, list),
-#     # r'polygon': (sqlalchemy.dialects.postgresql.POLYGON, list),
-#     # r'circle': (sqlalchemy.dialects.postgresql.CIRCLE, tuple),
-    
-#     # # * Full text search types
-#     # r'tsvector': (sqlalchemy.dialects.postgresql.TSVECTOR, str),
-#     # r'tsquery': (sqlalchemy.dialects.postgresql.TSQUERY, str),
-    
-#     # # * Range types
-#     # r'int4range': (sqlalchemy.dialects.postgresql.INT4RANGE, range),
-#     # r'int8range': (sqlalchemy.dialects.postgresql.INT8RANGE, range),
-#     # r'numrange': (sqlalchemy.dialects.postgresql.NUMRANGE, range),
-#     # r'tsrange': (sqlalchemy.dialects.postgresql.TSRANGE, range),
-#     # r'tstzrange': (sqlalchemy.dialects.postgresql.TSTZRANGE, range),
-#     # r'daterange': (sqlalchemy.dialects.postgresql.DATERANGE, range),
-# }
-
-# todo: Add some more types using regex & the SQLAlchemy types...
+import re
+from typing import Any, Dict, Type, List, Optional, Union, get_args, get_origin
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-import re
-from typing import Any, Dict, Type
 from uuid import UUID
+from pydantic import BaseModel, create_model, Field, ConfigDict
 
+class DynamicBase(BaseModel):
+    """Base class for dynamically created models"""
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        arbitrary_types_allowed=True
+    )
+
+class ArrayType:
+    """Wrapper class for array types"""
+    def __init__(self, item_type: Type):
+        self.item_type = item_type
+
+    def __call__(self) -> List:
+        return list()
+
+def infer_type(value: Any) -> Type:
+    """Infer Python type from a value"""
+    if value is None:
+        return Any
+    elif isinstance(value, bool):
+        return bool
+    elif isinstance(value, int):
+        return int
+    elif isinstance(value, float):
+        return float
+    elif isinstance(value, datetime):
+        return datetime
+    elif isinstance(value, str):
+        # Try to parse as UUID
+        try:
+            UUID(value)
+            return UUID
+        except ValueError:
+            return str
+    return str  # default to string for unknown types
+
+def create_dynamic_model(json_data: Any, model_name: str) -> Type[BaseModel]:
+    """Create a Pydantic model dynamically from JSON data"""
+    if isinstance(json_data, list) and json_data:
+        # Use the first item as a template for the structure
+        template = json_data[0]
+    elif isinstance(json_data, dict):
+        template = json_data
+    else:
+        raise ValueError("Cannot create model from this JSON structure")
+
+    fields = {}
+    for key, value in template.items():
+        if isinstance(value, dict):
+            # Nested object
+            nested_model = create_dynamic_model(value, f"{model_name}_{key}")
+            fields[key] = (nested_model, Field(default_factory=nested_model))
+        elif isinstance(value, list) and value and isinstance(value[0], dict):
+            # List of objects
+            nested_model = create_dynamic_model(value[0], f"{model_name}_{key}_item")
+            fields[key] = (List[nested_model], Field(default_factory=list))
+        else:
+            # Simple type
+            python_type = infer_type(value)
+            fields[key] = (Optional[python_type], Field(default=None))
+
+    return create_model(
+        model_name,
+        __base__=DynamicBase,
+        **fields
+    )
+
+class JSONBType:
+    """Wrapper class for JSONB types with dynamic model creation"""
+    def __init__(self, sample_data: Any = None):
+        self.sample_data = sample_data
+        self._model_cache = {}
+
+    def get_model(self, name: str) -> Type[BaseModel]:
+        """Get or create a model for the JSONB structure"""
+        if name not in self._model_cache:
+            if self.sample_data is None:
+                return dict
+            self._model_cache[name] = create_dynamic_model(self.sample_data, name)
+        return self._model_cache[name]
+
+def make_optional(type_: Type) -> Type:
+    """Make a type optional if it isn't already"""
+    if get_origin(type_) is Union and type(None) in get_args(type_):
+        return type_
+    return Optional[type_]
 
 SQL_TYPE_MAPPING: Dict[str, Type] = {
     r'uuid': UUID,
@@ -90,19 +110,39 @@ SQL_TYPE_MAPPING: Dict[str, Type] = {
     r'bytea': bytes,
     r'boolean': bool,
     r'date': date,
-    r'time(\(\d+\))?': time,
+    r'time(\(\d+\))?(\s+with(out)?\s+time\s+zone)?': time,
     r'timestamp(\(\d+\))?(\s+with(out)?\s+time\s+zone)?': datetime,
     r'interval': timedelta,
     r'json': dict,
     r'jsonb': dict,
     r'enum': str,
-    r'(\w+)\[\]': list,
 }
 
-def get_eq_type(sql_type: str) -> Type:
-    """Map SQLAlchemy types to Python types using regex matching."""
+def get_eq_type(sql_type: str, sample_data: Any = None, nullable: bool = True) -> Type:
+    """Enhanced type mapping with JSONB support and nullable handling"""
     sql_type_lower = sql_type.lower()
+    
+    # Handle JSONB type
+    if 'jsonb' in sql_type_lower:
+        return JSONBType(sample_data)
+    
+    # Handle timestamps specifically
+    if 'timestamp' in sql_type_lower:
+        return make_optional(datetime) if nullable else datetime
+    
+    # Check if it's an array type
+    if sql_type_lower.endswith('[]'):
+        return parse_array_type(sql_type_lower)
+    
+    # Regular type mapping
     for pattern, py_type in SQL_TYPE_MAPPING.items():
         if re.match(pattern, sql_type_lower):
-            return py_type
+            return make_optional(py_type) if nullable else py_type
+            
     return Any  # Default fallback
+
+def parse_array_type(sql_type: str) -> Type:
+    """Parse array type and return appropriate Python type"""
+    base_type = sql_type.replace('[]', '').strip()
+    element_type = get_eq_type(base_type)
+    return ArrayType(element_type)

@@ -1,4 +1,3 @@
-from fastapi import APIRouter, HTTPException
 from sqlalchemy import CursorResult, Inspector, MetaData, Table, inspect, text, Index
 from sqlalchemy.engine import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker, DeclarativeBase
@@ -6,16 +5,8 @@ from sqlalchemy.ext.automap import automap_base
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, Generator, List, Optional, Any, Type, Union, Set, Tuple
 from enum import Enum
-import logging
-from datetime import datetime
 from contextlib import contextmanager
-
-# Utility functions for console output
-gray = lambda x: f"\033[90m{x}\033[0m"
-bold = lambda x: f"\033[1m{x}\033[0m"
-green = lambda x: f"\033[32m{x}\033[0m"
-yellow = lambda x: f"\033[33m{x}\033[0m"
-red = lambda x: f"\033[31m{x}\033[0m"
+from forge.utils import *
 
 
 class DBType(str, Enum):
@@ -61,9 +52,8 @@ class DBConfig(BaseModel):
     port: Optional[int] = None
     echo: bool = False
     pool_config: Optional[PoolConfig] = Field(default_factory=PoolConfig)
-    schema_include: Optional[List[str]] = None  # Schemas to include
     schema_exclude: List[str] = Field(default=["information_schema", "pg_catalog"])
-    ssl_mode: Optional[str] = None
+    ssl_mode: Optional[str] = None  # * idk if this is the right place for this
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -110,16 +100,12 @@ class DBForge(BaseModel):
     metadata: MetaData = Field(default_factory=MetaData)
     Base: Type[DeclarativeBase] = Field(default_factory=automap_base)
     SessionLocal: sessionmaker = Field(default=None)
-    view_names: Set[str] = Field(default_factory=set, description="Store view names")
-    # _creation_time: datetime = Field(default_factory=datetime.now)
-    inspector: Inspector = Field(default=None)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, **data):
         super().__init__(**data)
         self.engine = self._create_engine()
-        self.inspector = inspect(self.engine)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         # self._test_connection()  # * Uncomment to test connection on initialization
         self._load_metadata()
@@ -136,70 +122,51 @@ class DBForge(BaseModel):
     def _test_connection(self) -> None:
         """Test database connection and log connection info."""
         try:
-            if self.config.db_type == DBType.SQLITE:
-                print(f"{gray('Connected to SQLite database:')} {bold(self.config.database)}")
-                return
-
             user, database = self.exec_raw_sql("SELECT current_user, current_database()").fetchone()
-            print(f"\t{gray('Connected to')} {bold(database)} {gray('as')} {bold(user)}")
-            print(f"\t{green('Database connection test successful!')}")
-
+            print(f"\n{gray('Connected to')} {bold(database)} {gray('as')} {bold(user)}")
+            print(f"{green('Database connection test successful!')}")
         except Exception as e:
             print(f"{red('Database connection test failed:')} {str(e)}")
             raise
+        print()
 
     def _load_metadata(self) -> None:
         """Enhanced metadata loading with schema filtering and error handling."""
-    
-        def _get_filtered_schemas() -> List[str]:
-            """Get filtered list of schemas based on configuration."""
-            all_schemas = set(self.inspector.get_schema_names())
-            excluded = set(self.config.schema_exclude)
-            
-            if self.config.schema_include:
-                return sorted(set(self.config.schema_include) - excluded)
-            return sorted(all_schemas - excluded)
+        inspector: Inspector = inspect(self.engine)
+        
+        # Create our base declarative base class first
+        class Base(DeclarativeBase):
+            pass
+        
+        self.Base = Base  # Store the actual base class, not the DeclarativeBase
 
-        def _load_schema_objects(schema: str) -> None:
-            """Load tables and views for a specific schema."""
-            # Load views
-            for view_name in self.inspector.get_view_names(schema=schema):
-                full_name = f"{schema}.{view_name}" if schema else view_name
-                self.view_names.add(full_name)
-                Table(view_name, self.metadata, autoload_with=self.engine, schema=schema)
-
-            # Load tables
-            for table_name in self.inspector.get_table_names(schema=schema):
-                full_name = f"{schema}.{table_name}" if schema else table_name
-                if full_name not in self.view_names:  # * Skip if already loaded as a view
-                    Table(table_name, self.metadata, autoload_with=self.engine, schema=schema)
+        # Load tables and views into metadata
+        # # todo: Change this to filter the schemas depending on...
+        # # todo: User permissions or configuration settings...
+        # # * To enable some kind of MULTI-TENANCY support
+        for schema in sorted(set(inspector.get_schema_names()) - set(self.config.schema_exclude)):
+            [Table(t, self.metadata, autoload_with=self.engine, schema=schema) for t in inspector.get_table_names(schema=schema)]
+            [Table(v, self.metadata, autoload_with=self.engine, schema=schema) for v in inspector.get_view_names(schema=schema)]
 
 
-        try:
-            self.view_names.clear()
-            [_load_schema_objects(schema) for schema in _get_filtered_schemas()]
-            self.Base.prepare(self.engine, reflect=True)
-
-        except Exception as e:
-            print(f"{red('Error during metadata reflection:')} {str(e)}")
-            raise
+        # self.Base.prepare(self.engine, reflect=True)
 
     # * PUBLIC METHODS (OPERATIONS)
     @contextmanager
     def get_session(self) -> Generator[Session, None, None]:
         """Context manager for database sessions."""
-        session = self.SessionLocal()
+        session: Session = self.SessionLocal()
         try:
             yield session
             session.commit()
         except Exception:
             session.rollback()
             raise
-        finally:
-            session.close()
+        finally: session.close()
 
     def get_db(self) -> Generator[Session, None, None]:
         """Generator for database sessions (FastAPI dependency)."""
+        # todo: Add typing to the generator
         db = self.SessionLocal()
         try:
             yield db
@@ -212,17 +179,12 @@ class DBForge(BaseModel):
 
     def get_db_version(self) -> str:
         """Get database version information."""
-        version_queries = {
-            DBType.POSTGRESQL: "SELECT version()",
-            DBType.MYSQL: "SELECT version()",
-            DBType.SQLITE: "SELECT sqlite_version()",
-            DBType.MSSQL: "SELECT @@VERSION"
-        }
+        match self.config.db_type:
+            case DBType.POSTGRESQL | DBType.MYSQL: query = "SELECT version()"
+            case DBType.SQLITE: query = "SELECT sqlite_version()"
+            case DBType.MSSQL: query = "SELECT @@VERSION"
 
-        query = version_queries.get(self.config.db_type)
-        if query:
-            result = self.exec_raw_sql(query).scalar()
-            return str(result).split('\n')[0]  # First line of version info
+        if query: return str(self.exec_raw_sql(query).scalar()).split('\n')[0]  # First line of version info
         return "Unknown"
 
     def log_metadata_stats(self) -> None:
@@ -232,25 +194,14 @@ class DBForge(BaseModel):
         print(f"{gray('Connected to')} {bold(database)} {gray('as')} {bold(user)}")
         print(f"{gray('Database version:')} {bold(self.get_db_version())}")
 
-        if not self.metadata.tables:
-            print(f"{yellow('No tables or views found in the database after reflection.')}")
-            return
-
-        total_views = len(self.view_names)
-        print(f"Found {gray(f"{len(self.metadata.tables) - total_views}")} tables and {total_views} views")
-
         print(f"\n{bold('DB Connection Information:')}")
         print(f"\tType: {green(self.config.db_type)}")
         print(f"\tDriver: {green(self.config.driver_type)}")
         print(f"\tDatabase: {green(self.config.database)}")
 
-        # Print object counts
-        total_tables = len([t for t in self.metadata.tables.values()if t.name not in self.view_names])
-        total_views = len(self.view_names)
-
-        print(f"\n{bold('DB  Objects:')}")
-        print(f"\tTables: {green(str(total_tables))}")
-        print(f"\tViews: {green(str(total_views))}")
+        if not self.metadata.tables:
+            print(f"{yellow(bold("No tables or views found in the database after reflection."))}")
+            return
 
     def analyze_table_relationships(self) -> Dict[str, List[Dict[str, str]]]:
         """Analyze and return table relationships."""
@@ -264,39 +215,3 @@ class DBForge(BaseModel):
                     "to_col": fk.column.name
                 })
         return relationships
-
-
-    # # * SOME USEFUL GET METHODS
-    # # * GET METHODS
-    # def get_table(self, table_name: str, schema: Optional[str] = None) -> Table:
-    #     """Get a SQLAlchemy Table object."""
-    #     full_name = f"{schema}.{table_name}" if schema else table_name
-    #     if full_name not in self.metadata.tables:
-    #         raise ValueError(f"Table {full_name} not found in the database")
-    #     return self.metadata.tables[full_name]
-
-    # def get_tables(self, schema: Optional[str] = None) -> Dict[str, Table]:
-    #     """Get a dictionary of SQLAlchemy Table objects (excluding views)."""
-    #     return {
-    #         name: table
-    #         for name, table in self.metadata.tables.items()
-    #         if (schema is None or table.schema == schema) and not self.is_view(name)
-    #     }
-
-    # def get_views(self, schema: Optional[str] = None) -> Dict[str, Table]:
-    #     """Get a dictionary of SQLAlchemy Table objects representing views."""
-    #     return {
-    #         name: view
-    #         for name, view in self.metadata.tables.items()
-    #         if (schema is None or view.schema == schema) and self.is_view(name)
-    #     }
-
-    # def get_all_tables(self) -> Dict[str, Table]:
-    #     """Get all tables across all schemas (excluding views)."""
-    #     return {name: table for name, table in self.metadata.tables.items() 
-    #             if not self.is_view(name)}
-
-    # def get_all_views(self) -> Dict[str, Table]:
-    #     """Get all views across all schemas."""
-    #     return {name: view for name, view in self.metadata.tables.items() 
-    #             if self.is_view(name)}
