@@ -25,6 +25,11 @@ bullet = lambda x: f"• {x}"
 arrow = lambda x: f"→ {x}"
 box = lambda x: f"┌{'─'*50}┐\n│{x:^50}│\n└{'─'*50}┘"
 
+def visible_len(text: str) -> int:
+    """Calculate the visible length of a string, ignoring ANSI color codes."""
+    # Remove all ANSI escape sequences
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return len(ansi_escape.sub('', text))
 
 class AppConfig(BaseModel):
     PROJECT_NAME: str = Field(..., description="The name of your project")

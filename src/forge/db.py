@@ -195,9 +195,9 @@ class DBForge(BaseModel):
         print(f"{gray('Database version:')} {bold(self.get_db_version())}")
 
         print(f"\n{bold('DB Connection Information:')}")
-        print(f"\tType: {green(self.config.db_type)}")
-        print(f"\tDriver: {green(self.config.driver_type)}")
-        print(f"\tDatabase: {green(self.config.database)}")
+        print(f"\t{f"Type:":<12}{green(self.config.db_type.name)}")
+        print(f"\t{f"Driver:":<12}{green(self.config.driver_type.name)}")
+        print(f"\t{f"DB:":<12}{green(italic(bold(self.config.database)))}")
 
         if not self.metadata.tables:
             print(f"{yellow(bold("No tables or views found in the database after reflection."))}")

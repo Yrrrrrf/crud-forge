@@ -1,5 +1,6 @@
-from typing import Dict, List, Optional, Tuple, Type, Any, Callable
+from typing import Dict, List, Optional, Set, Tuple, Type, Any, Callable
 from enum import Enum
+from more_itertools import tabulate
 from pydantic import BaseModel, Field, ConfigDict, create_model
 from sqlalchemy import text
 from forge.utils.sql_types import get_eq_type, ArrayType, JSONBType
@@ -109,6 +110,18 @@ from sqlalchemy import text
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
+# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
+# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
+# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
+# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
+class PostgresObjectType(str, Enum):
+    FUNCTION = "function"
+    PROCEDURE = "procedure"
+    TRIGGER = "trigger"
+    AGGREGATE = "aggregate"
+    WINDOW = "window"
+
 class FunctionVolatility(str, Enum):
     IMMUTABLE = "IMMUTABLE"
     STABLE = "STABLE"
@@ -143,6 +156,7 @@ class FunctionMetadata(BaseModel):
     return_type: Optional[str] = None
     parameters: List[FunctionParameter] = Field(default_factory=list)
     type: FunctionType
+    object_type: PostgresObjectType  # Add this field
     volatility: FunctionVolatility
     security_type: SecurityType
     is_strict: bool
@@ -168,8 +182,17 @@ class FnForge(BaseModel):
         extra='allow'
     )
 
+    def _get_object_type(self, prokind: str) -> PostgresObjectType:
+        """Convert PostgreSQL function kind code to PostgresObjectType enum."""
+        return {
+            'f': PostgresObjectType.FUNCTION,
+            'p': PostgresObjectType.PROCEDURE,
+            'a': PostgresObjectType.AGGREGATE,
+            'w': PostgresObjectType.WINDOW,
+            't': PostgresObjectType.TRIGGER
+        }.get(prokind, PostgresObjectType.FUNCTION)
+
     def discover_functions(self) -> None:
-        """Query system catalogs to discover available functions."""
         query = """
             SELECT 
                 n.nspname as schema,
@@ -182,58 +205,74 @@ class FnForge(BaseModel):
                 d.description,
                 p.proretset as returns_set,
                 p.prokind as kind,
-                p.prosrc as source,  -- Get function source
-                p.pronamespace as namespace_oid,  -- Get namespace OID
-                p.proowner as owner_oid  -- Get owner OID
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1 
+                        FROM pg_trigger t 
+                        WHERE t.tgfoid = p.oid
+                        OR p.proname LIKE 'tg_%' 
+                        OR p.proname LIKE 'trg_%'
+                    ) THEN 'trigger'
+                    WHEN p.prorettype = 'trigger'::regtype::oid THEN 'trigger'
+                    WHEN p.prokind = 'p' THEN 'procedure'
+                    ELSE 'function'
+                END as object_type,
+                -- Additional trigger-specific information
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1 
+                        FROM pg_trigger t 
+                        WHERE t.tgfoid = p.oid
+                        OR p.proname LIKE 'tg_%' 
+                        OR p.proname LIKE 'trg_%'
+                    ) THEN (
+                        SELECT string_agg(DISTINCT evt.event_type, ', ')
+                        FROM (
+                            SELECT 
+                                CASE tg.tgtype::integer & 2::integer 
+                                    WHEN 2 THEN 'BEFORE'
+                                    ELSE 'AFTER'
+                                END || ' ' ||
+                                CASE 
+                                    WHEN tg.tgtype::integer & 4::integer = 4 THEN 'INSERT'
+                                    WHEN tg.tgtype::integer & 8::integer = 8 THEN 'DELETE'
+                                    WHEN tg.tgtype::integer & 16::integer = 16 THEN 'UPDATE'
+                                    WHEN tg.tgtype::integer & 32::integer = 32 THEN 'TRUNCATE'
+                                END as event_type
+                            FROM pg_trigger tg
+                            WHERE tg.tgfoid = p.oid
+                        ) evt
+                    )
+                    ELSE NULL
+                END as trigger_events
             FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
             LEFT JOIN pg_description d ON p.oid = d.objoid
-            WHERE n.nspname = ANY(:schemas)
-            -- Exclude PostgreSQL internal functions
-            AND p.proname NOT LIKE 'pg_%'  -- Exclude postgres prefixed
-            AND p.proname NOT LIKE '_%'    -- Exclude underscore prefixed
-            -- Exclude extension-provided functions
-            AND NOT EXISTS (
-                SELECT 1 
-                FROM pg_depend d 
-                WHERE d.objid = p.oid 
-                AND d.deptype = 'e'  -- 'e' means extension
-            )
-            -- Exclude functions from specific extensions
-            AND NOT EXISTS (
-                SELECT 1
-                FROM pg_extension ext
-                JOIN pg_depend d ON d.refobjid = ext.oid
-                WHERE d.objid = p.oid
-                AND ext.extname IN (
-                    'uuid-ossp',    -- UUID functions
-                    'pgcrypto',     -- Cryptographic functions
-                    'pg_trgm',      -- Trigram functions
-                    'plpgsql'       -- PL/pgSQL handler
+            LEFT JOIN pg_depend dep ON dep.objid = p.oid 
+                AND dep.deptype = 'e'
+            LEFT JOIN pg_extension ext ON dep.refobjid = ext.oid
+            WHERE ext.extname IS NULL
+                AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+                AND p.proname NOT LIKE 'pg_%%'
+                AND p.oid > (
+                    SELECT oid 
+                    FROM pg_proc 
+                    WHERE proname = 'current_database' 
+                    LIMIT 1
                 )
-            )
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM pg_depend d2
+                    JOIN pg_extension e2 ON d2.refobjid = e2.oid
+                    WHERE d2.objid = p.oid
+                )
+                AND p.pronamespace > (
+                    SELECT oid 
+                    FROM pg_namespace 
+                    WHERE nspname = 'pg_catalog'
+                )
             ORDER BY n.nspname, p.proname;
         """
-        
-        # Common built-in function patterns to exclude
-        default_function_patterns = [
-            r'^uuid_',          # UUID related functions
-            r'^gen_',           # Generic generation functions
-            r'^crypt',          # Cryptographic functions
-            r'^decrypt',        # Cryptographic functions
-            r'^encrypt',        # Cryptographic functions
-            r'^armor',          # PGP armor functions
-            r'^dearmor',        # PGP armor functions
-            r'^gin_',           # GIN index functions
-            r'^gtrgm_',        # Trigram functions
-            r'^similarity',     # Similarity functions
-            r'^word_similarity', # Word similarity functions
-            r'^strict_word_similarity', # Strict word similarity functions
-            r'^digest',         # Hash functions
-            r'^hmac',          # HMAC functions
-            r'_trgm$',         # Trigram suffix
-        ]
-        
         with next(self.db_dependency()) as db:
             result = db.execute(
                 text(query), 
@@ -244,33 +283,28 @@ class FnForge(BaseModel):
                 if row.name in self.exclude_functions:
                     continue
                     
-                # Skip functions matching default patterns
-                if any(re.match(pattern, row.name) for pattern in default_function_patterns):
-                    continue
-
-                # Skip system or extension provided functions
-                if (
-                    not row.description  # Most custom functions have descriptions
-                    and not row.source   # And meaningful source code
-                    and row.schema == 'public'  # And are not in public schema
-                ):
-                    continue
-                    
                 fn_type = self._determine_function_type(row)
                 parameters = self._parse_parameters(row.arguments)
                 
+                # Determine if it's a trigger function based on name or object_type
+                is_trigger = (
+                    row.object_type == 'trigger' or 
+                    row.name.startswith(('tg_', 'trg_'))
+                )
+
                 metadata = FunctionMetadata(
                     schema=row.schema,
                     name=row.name,
                     return_type=row.return_type if row.return_type else 'void',
                     parameters=parameters,
                     type=fn_type,
+                    object_type=PostgresObjectType.TRIGGER if is_trigger else self._get_object_type(row.kind),
                     volatility=self._get_volatility(row.volatility),
                     security_type=SecurityType.DEFINER if row.security_definer else SecurityType.INVOKER,
                     is_strict=row.is_strict,
                     description=row.description
                 )
-                
+
                 self.function_cache[f"{row.schema}.{row.name}"] = metadata
 
     def generate_function_models(self) -> None:
@@ -373,9 +407,15 @@ class FnForge(BaseModel):
     def log_metadata_stats(self) -> None:
         """Print statistics about discovered functions."""
         print(header("FunctionForge Statistics"))
-        
+
+        # Collect statistics
         function_counts = {}
+        active_types = set()
+
+        # First pass to get max lengths
+        max_schema_len = len("Schema")  # minimum width for header
         for metadata in self.function_cache.values():
+            max_schema_len = max(max_schema_len, visible_len(metadata.schema))
             if metadata.schema not in function_counts:
                 function_counts[metadata.schema] = {
                     FunctionType.SCALAR: 0,
@@ -385,17 +425,33 @@ class FnForge(BaseModel):
                     FunctionType.WINDOW: 0
                 }
             function_counts[metadata.schema][metadata.type] += 1
+            if function_counts[metadata.schema][metadata.type] > 0:
+                active_types.add(metadata.type)
 
-        print(f"\n{cyan(bullet('Schemas'))}: {bright(len(function_counts))}")
+        # Headers with tabs
+        print(f"Schema\t\tscalar\tset\tTotal")
         
+        # Print rows
         for schema, counts in function_counts.items():
-            print(f"\t{magenta(arrow(schema))}")
-            for fn_type, count in counts.items():
-                if count > 0:
-                    print(f"\t\t{dim(fn_type.value + ':'):<20} {green(f'{count:>4}')}")
-
-        total_functions = sum(
-            sum(counts.values()) 
-            for counts in function_counts.values()
-        )
-        print(f"\n{bright('Total Functions:')} {total_functions}\n")
+            schema_total = sum(counts.values())
+            scalar_count = counts[FunctionType.SCALAR]
+            set_count = counts[FunctionType.SET_RETURNING]
+            
+            colored_schema = magenta(schema.rjust(max_schema_len))
+            colored_scalar = green(str(scalar_count).rjust(2))
+            colored_set = green(str(set_count).rjust(1))
+            colored_total = bright(str(schema_total).rjust(2))
+            
+            print(f"{colored_schema}\t{colored_scalar}\t{colored_set}\t{colored_total}")
+        
+        # Print totals with proper spacing
+        total_scalar = str(sum(counts[FunctionType.SCALAR] for counts in function_counts.values())).rjust(2)
+        total_set = str(sum(counts[FunctionType.SET_RETURNING] for counts in function_counts.values())).rjust(1)
+        grand_total = str(sum(sum(counts.values()) for counts in function_counts.values())).rjust(2)
+        
+        # Color the totals after right justification
+        colored_total_scalar = bright(total_scalar)
+        colored_total_set = bright(total_set)
+        colored_grand_total = bright(grand_total)
+        
+        print(f"{'Total'.rjust(max_schema_len)}\t{colored_total_scalar}\t{colored_total_set}\t{colored_grand_total}")

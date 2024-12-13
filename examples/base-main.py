@@ -59,33 +59,39 @@ model_forge = ModelForge(
 # todo: Improve the log_schema_*() fn's to be more informative & also add some 'verbose' flag
 # model_forge.log_schema_tables()
 # model_forge.log_schema_views()
+# todo: FnForge::log_schema_functions()
+
 # * Add some logging to the model_forge...
 # [print(f"{bold('Models:')} {table}") for table in model_forge.model_cache]
 # [print(f"{bold('Views:')} {view}") for view in model_forge.view_cache]
 # [print(f"{bold('PyEnum:')} {enum}") for enum in model_forge.enum_cache]
-
-
+# todo: Print the 'Functions' as well
+# [print(f"{bold('Functions:')} {enum}") for enum in model_forge.fn_cache]
 
 
 # ? Function Forge -----------------------------------------------------------------------------
 function_forge = FnForge(
     db_dependency=db_manager.get_db,
-    include_schemas=model_forge.include_schemas,  # Reuse same schemas
-    exclude_functions=[
-        # Add any functions you want to exclude
-        'pg_stat_statements_reset',
-        'pg_stat_statements',
-    ]
+    include_schemas=model_forge.include_schemas  # Reuse same schemas
 )
 # Discover and set up functions
 function_forge.discover_functions()
 function_forge.generate_function_models()
 
+# todo: Add this to the FnForge class
+# todo: FnForge::log_schema_functions()
+function_forge.log_metadata_stats()
+
 print(f"\n{bold('Functions:')} {len(function_forge.function_cache)}")
-print(f"\n{bold('Functions:')} {function_forge.function_cache.keys()}")
-
-
-
+for schema in model_forge.include_schemas:
+    print(f"\n{bold('\t')} {schema}")
+    for key, value in function_forge.function_cache.items():
+        if key.startswith(schema):
+            # Add object_type to the output
+            print(f"\t\t{dim(f'{value.object_type.value:>10}')} {dim(f'{value.type.name:>16}')} {key.split('.')[1]}")
+            for param in value.parameters:
+                print(f"\t\t\t\t\t{param.name} {param.type}")
+            print()
 
 
 # ? API Forge -----------------------------------------------------------------------------------
