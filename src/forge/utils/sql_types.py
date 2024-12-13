@@ -105,22 +105,47 @@ SQL_TYPE_MAPPING: Dict[str, Type] = {
     r'enum': str,
 }
 
-def get_eq_type(sql_type: str, sample_data: Any = None, nullable: bool = True) -> Type:
-    """Enhanced type mapping with JSONB support and nullable handling"""
-    sql_type_lower = sql_type.lower()
+# def get_eq_type(sql_type: str, sample_data: Any = None, nullable: bool = True) -> Type:
+#     """Enhanced type mapping with JSONB support and nullable handling"""
+#     sql_type_lower = sql_type.lower()
     
-    match sql_type.lower():
-        case 'jsonb': return JSONBType(sample_data)
-        case 'timestamp': return make_optional(datetime) if nullable else datetime
-        case _ if sql_type_lower.endswith('[]'): return parse_array_type(sql_type_lower)
-        case _:
-            for pattern, py_type in SQL_TYPE_MAPPING.items():
-                if re.match(pattern, sql_type_lower):
-                    return make_optional(py_type) if nullable else py_type
-            return Any  # Default fallback
+#     match sql_type.lower():
+#         case 'jsonb': return JSONBType(sample_data)
+#         case 'timestamp': return make_optional(datetime) if nullable else datetime
+#         case _ if sql_type_lower.endswith('[]'): return parse_array_type(sql_type_lower)
+#         case _:
+#             for pattern, py_type in SQL_TYPE_MAPPING.items():
+#                 if re.match(pattern, sql_type_lower):
+#                     return make_optional(py_type) if nullable else py_type
+#             return Any  # Default fallback
+
+# def parse_array_type(sql_type: str) -> Type:
+#     """Parse array type and return appropriate Python type"""
+#     base_type = sql_type.replace('[]', '').strip()
+#     element_type = get_eq_type(base_type)
+#     return ArrayType(item_type=element_type)  # Pass as keyword argument
+#     # return ArrayType(element_type)
+
 
 def parse_array_type(sql_type: str) -> Type:
     """Parse array type and return appropriate Python type"""
     base_type = sql_type.replace('[]', '').strip()
-    element_type = get_eq_type(base_type)
-    return ArrayType(element_type)
+    element_type = get_eq_type(base_type, nullable=False)  # Force non-nullable for array item type
+    # If we got an Optional type, get the inner type
+    if hasattr(element_type, "__origin__") and element_type.__origin__ is Union:
+        element_type = element_type.__args__[0]  # Get the first non-None type
+    return ArrayType(item_type=element_type)  # Pass as keyword argument
+
+def get_eq_type(sql_type: str, sample_data: Any = None, nullable: bool = True) -> Type:
+    """Enhanced type mapping with JSONB support and nullable handling"""
+    match sql_type.lower():
+        case 'jsonb': return JSONBType(sample_data)
+        case 'timestamp': return make_optional(datetime) if nullable else datetime
+        case _ if sql_type.endswith('[]'):  # Handle array types
+            array_type = parse_array_type(sql_type.lower())
+            return make_optional(array_type) if nullable else array_type
+        case _:  # * Handle other types (including JSONB)
+            for pattern, py_type in SQL_TYPE_MAPPING.items():
+                if re.match(pattern, sql_type.lower()):
+                    return make_optional(py_type) if nullable else py_type
+            return Any  # Default fallback

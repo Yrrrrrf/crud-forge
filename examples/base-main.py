@@ -3,6 +3,7 @@ from fastapi import FastAPI
 import os
 
 # Import our enhanced DBForge and related classes
+from forge.gen.fn import FnForge
 from forge.utils import *
 from forge.db import DBForge, DBConfig, PoolConfig
 from forge.api import APIForge
@@ -54,23 +55,45 @@ model_forge = ModelForge(
         'analytics'
     ],
 )
-model_forge.log_metadata_stats()
+# model_forge.log_metadata_stats()
 # todo: Improve the log_schema_*() fn's to be more informative & also add some 'verbose' flag
-model_forge.log_schema_tables()
-model_forge.log_schema_views()
+# model_forge.log_schema_tables()
+# model_forge.log_schema_views()
 # * Add some logging to the model_forge...
 # [print(f"{bold('Models:')} {table}") for table in model_forge.model_cache]
 # [print(f"{bold('Views:')} {view}") for view in model_forge.view_cache]
 # [print(f"{bold('PyEnum:')} {enum}") for enum in model_forge.enum_cache]
 
+
+
+
+# ? Function Forge -----------------------------------------------------------------------------
+function_forge = FnForge(
+    db_dependency=db_manager.get_db,
+    include_schemas=model_forge.include_schemas,  # Reuse same schemas
+    exclude_functions=[
+        # Add any functions you want to exclude
+        'pg_stat_statements_reset',
+        'pg_stat_statements',
+    ]
+)
+# Discover and set up functions
+function_forge.discover_functions()
+function_forge.generate_function_models()
+
+print(f"\n{bold('Functions:')} {len(function_forge.function_cache)}")
+print(f"\n{bold('Functions:')} {function_forge.function_cache.keys()}")
+
+
+
+
+
 # ? API Forge -----------------------------------------------------------------------------------
 api_forge = APIForge(model_forge=model_forge)
 # * THE ROUTES MUST BE GENERATED AFTER THE MODELS!
-api_forge.gen_table_routes()
-api_forge.gen_view_routes()
-# # # * Print the routers
+# api_forge.gen_table_routes()
+# api_forge.gen_view_routes()
+# * Print the routers
 [app.include_router(router) for router in api_forge.routers.values()]
-
-print(f"\n\n{bold(app_config.PROJECT_NAME)} on {underline(italic(bold(green("http://localhost:8000/docs"))))}\n\n")
 
 print(f"\n\n{bold(app_config.PROJECT_NAME)} on {underline(italic(bold(green("http://localhost:8000/docs"))))}\n\n")
