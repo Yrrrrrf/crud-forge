@@ -1,5 +1,5 @@
 """Main file for showcasing the database structure using DBForge"""
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 import os
 
 # Import our enhanced DBForge and related classes
@@ -92,6 +92,13 @@ for schema in model_forge.include_schemas:
             for param in value.parameters:
                 print(f"\t\t\t\t\t{param.name} {param.type}")
             print()
+
+fn_router = APIRouter()
+
+function_forge.generate_function_routes(fn_router)
+app.include_router(fn_router)
+
+
 
 
 # ? API Forge -----------------------------------------------------------------------------------

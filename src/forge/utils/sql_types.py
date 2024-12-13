@@ -100,13 +100,11 @@ SQL_TYPE_MAPPING: Dict[str, Type] = {
 }
 
 def parse_array_type(sql_type: str) -> Type:
-    """Parse array type and return appropriate Python type"""
     base_type = sql_type.replace('[]', '').strip()
-    element_type = get_eq_type(base_type, nullable=False)  # Force non-nullable for array item type
-    # If we got an Optional type, get the inner type
+    element_type = get_eq_type(base_type, nullable=False)
     if hasattr(element_type, "__origin__") and element_type.__origin__ is Union:
-        element_type = element_type.__args__[0]  # Get the first non-None type
-    return ArrayType(item_type=element_type)  # Pass as keyword argument
+        element_type = element_type.__args__[0]
+    return List[element_type]  # Return List directly
 
 def make_optional(type_: Type) -> Type:
     """Make a type optional if it isn't already"""

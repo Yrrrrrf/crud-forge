@@ -1,120 +1,17 @@
-from typing import Dict, List, Optional, Set, Tuple, Type, Any, Callable
 from enum import Enum
-from more_itertools import tabulate
+from typing import Any, Callable, Dict, List, Optional, Type, Tuple
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ConfigDict, create_model
+from pytest import Session
 from sqlalchemy import text
-from forge.utils.sql_types import get_eq_type, ArrayType, JSONBType
 from forge.utils import *
-from sqlalchemy.orm import Session
 
-class FunctionVolatility(str, Enum):
-    IMMUTABLE = "IMMUTABLE"
-    STABLE = "STABLE"
-    VOLATILE = "VOLATILE"
-
-class SecurityType(str, Enum):
-    DEFINER = "SECURITY DEFINER"
-    INVOKER = "SECURITY INVOKER"
-
-class FunctionType(str, Enum):
-    SCALAR = "scalar"
-    TABLE = "table"
-    SET_RETURNING = "set"
-    AGGREGATE = "aggregate"
-    WINDOW = "window"
-
-class FunctionParameter(BaseModel):
-    name: str
-    type: str
-    has_default: bool = False
-    default_value: Optional[Any] = None
-    mode: str = "IN"  # IN, OUT, INOUT, VARIADIC
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        arbitrary_types_allowed=True
-    )
-
-class FunctionMetadata(BaseModel):
-    schema: str
-    name: str
-    return_type: Optional[str] = None
-    parameters: List[FunctionParameter] = Field(default_factory=list)
-    type: FunctionType
-    volatility: FunctionVolatility
-    security_type: SecurityType
-    is_strict: bool
-    description: Optional[str] = None
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        arbitrary_types_allowed=True
-    )
+from forge.utils.sql_types import ArrayType, get_eq_type
 
 
+# ? Metadata for some function ---------------------------------------------------
 
-class FnForge(BaseModel):
-    """Handles PostgreSQL function discovery and route generation."""
-    db_dependency: Callable
-    include_schemas: List[str]
-    exclude_functions: List[str] = Field(default_factory=list)
-    
-    # Caches for models and metadata
-    function_cache: Dict[str, FunctionMetadata] = Field(default_factory=dict)
-    model_cache: Dict[str, Tuple[Type[BaseModel], Type[BaseModel]]] = Field(default_factory=dict)
-
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True,
-        extra='allow'
-    )
-
-    def generate_function_models(self) -> None:
-        """Generate input and output models for functions."""
-        for func_id, metadata in self.function_cache.items():
-            # Generate input model
-            input_fields = {}
-            for param in metadata.parameters:
-                field_type = get_eq_type(param.type)  # Using your existing function
-                input_fields[param.name] = (
-                    field_type if param.has_default else field_type,
-                    Field(default=param.default_value if param.has_default else ...)
-                )
-            
-            # Create input model
-            input_model = create_model(
-                f"{metadata.name}_Input",
-                __base__=BaseModel,
-                **input_fields
-            )
-            
-            # Generate output model
-            if metadata.type in (FunctionType.TABLE, FunctionType.SET_RETURNING):
-                output_fields = self._parse_table_return(metadata.return_type)
-            else:
-                output_type = get_eq_type(metadata.return_type)  # Using your existing function
-                output_fields = {"result": (output_type, ...)}
-                
-            output_model = create_model(
-                f"{metadata.name}_Output",
-                __base__=BaseModel,
-                **output_fields
-            )
-            
-            # Cache models
-            self.model_cache[func_id] = (input_model, output_model)
-
-# I'll help you improve the FunctionForge (FnForge) class by converting it to a Pydantic model and fixing the model cache issue. Here's the improved version:
-# pythonCopyfrom typing import Dict, List, Optional, Type, Any, Callable, Tuple
-from pydantic import BaseModel, Field, ConfigDict
-from sqlalchemy import text
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-
-# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
-# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
-# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
-# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
-# todo: Impl some way to generalize this to more databases tahn just PostgreSQL
+# ?.todo: Add some way to generalize this to more databases than just PostgreSQL
 class PostgresObjectType(str, Enum):
     FUNCTION = "function"
     PROCEDURE = "procedure"
@@ -167,6 +64,14 @@ class FunctionMetadata(BaseModel):
         arbitrary_types_allowed=True
     )
 
+# ? FnForge class ------------------------------------------------------------------
+# ? 
+# ? This class is responsible for discovering functions in a PostgreSQL database
+# ? and generating Pydantic models for input and output parameters.
+# ? 
+# ? The class is designed to be used as a dependency in FastAPI applications.
+# ?.todo: Add some way to generalize this to more databases than just PostgreSQL
+
 class FnForge(BaseModel):
     """Handles PostgreSQL function discovery and route generation."""
     db_dependency: Callable
@@ -210,21 +115,16 @@ class FnForge(BaseModel):
                         SELECT 1 
                         FROM pg_trigger t 
                         WHERE t.tgfoid = p.oid
-                        OR p.proname LIKE 'tg_%' 
-                        OR p.proname LIKE 'trg_%'
-                    ) THEN 'trigger'
-                    WHEN p.prorettype = 'trigger'::regtype::oid THEN 'trigger'
+                    ) OR p.prorettype = 'trigger'::regtype::oid THEN 'trigger'
                     WHEN p.prokind = 'p' THEN 'procedure'
                     ELSE 'function'
                 END as object_type,
-                -- Additional trigger-specific information
+                -- Get trigger event information if it's a trigger function
                 CASE 
                     WHEN EXISTS (
                         SELECT 1 
                         FROM pg_trigger t 
                         WHERE t.tgfoid = p.oid
-                        OR p.proname LIKE 'tg_%' 
-                        OR p.proname LIKE 'trg_%'
                     ) THEN (
                         SELECT string_agg(DISTINCT evt.event_type, ', ')
                         FROM (
@@ -273,11 +173,9 @@ class FnForge(BaseModel):
                 )
             ORDER BY n.nspname, p.proname;
         """
+        
         with next(self.db_dependency()) as db:
-            result = db.execute(
-                text(query), 
-                {"schemas": self.include_schemas}
-            )
+            result = db.execute(text(query))
             
             for row in result:
                 if row.name in self.exclude_functions:
@@ -285,12 +183,6 @@ class FnForge(BaseModel):
                     
                 fn_type = self._determine_function_type(row)
                 parameters = self._parse_parameters(row.arguments)
-                
-                # Determine if it's a trigger function based on name or object_type
-                is_trigger = (
-                    row.object_type == 'trigger' or 
-                    row.name.startswith(('tg_', 'trg_'))
-                )
 
                 metadata = FunctionMetadata(
                     schema=row.schema,
@@ -298,13 +190,13 @@ class FnForge(BaseModel):
                     return_type=row.return_type if row.return_type else 'void',
                     parameters=parameters,
                     type=fn_type,
-                    object_type=PostgresObjectType.TRIGGER if is_trigger else self._get_object_type(row.kind),
+                    object_type=PostgresObjectType(row.object_type),  # Direct conversion from SQL result
                     volatility=self._get_volatility(row.volatility),
                     security_type=SecurityType.DEFINER if row.security_definer else SecurityType.INVOKER,
                     is_strict=row.is_strict,
                     description=row.description
                 )
-
+                
                 self.function_cache[f"{row.schema}.{row.name}"] = metadata
 
     def generate_function_models(self) -> None:
@@ -455,3 +347,136 @@ class FnForge(BaseModel):
         colored_grand_total = bright(grand_total)
         
         print(f"{'Total'.rjust(max_schema_len)}\t{colored_total_scalar}\t{colored_total_set}\t{colored_grand_total}")
+
+    def generate_function_routes(self, router: APIRouter) -> None:
+        """Generate routes for all discovered functions."""
+        for func_id, metadata in self.function_cache.items():
+            if metadata.object_type not in [PostgresObjectType.TRIGGER]:  # Skip triggers
+                generate_function_routes(
+                    schema=metadata.schema,
+                    function_metadata=metadata,
+                    router=router,
+                    db_dependency=self.db_dependency,
+                    get_eq_type=get_eq_type
+                )
+
+class FunctionBase(BaseModel):
+    """Base class for function models"""
+    model_config = ConfigDict(
+        from_attributes=True,
+        populate_by_name=True,
+        arbitrary_types_allowed=True
+    )
+
+
+def _parse_table_return_type(return_type: str) -> Dict[str, Tuple[Type, Any]]:
+    """Parse TABLE and SETOF return types into field definitions."""
+    fields = {}
+    
+    if "TABLE" in return_type:
+        # Strip 'TABLE' and parentheses
+        columns_str = return_type.replace("TABLE", "").strip("()").strip()
+        columns = [col.strip() for col in columns_str.split(",")]
+        
+        for column in columns:
+            name, type_str = column.split(" ", 1)
+            field_type = get_eq_type(type_str)
+            # Handle ArrayType in table columns
+            if isinstance(field_type, ArrayType):
+                field_type = List[field_type.item_type]
+            fields[name] = (field_type, ...)
+                
+    return fields
+
+
+def generate_function_routes(
+    schema: str,
+    function_metadata: FunctionMetadata,
+    router: APIRouter,
+    db_dependency: Callable,
+    get_eq_type: Callable
+) -> None:
+    """Generate routes for PostgreSQL functions with proper type handling."""
+    
+    # Generate input model fields
+    input_fields = {}
+    for param in function_metadata.parameters:
+        field_type = get_eq_type(param.type)
+        
+        # Handle array types
+        if isinstance(field_type, ArrayType):
+            field_type = List[field_type.item_type]
+            
+        input_fields[param.name] = (
+            field_type if not param.has_default else Optional[field_type],
+            Field(default=param.default_value if param.has_default else ...)
+        )
+
+    # Create input model
+    FunctionInputModel = create_model(
+        f"Function_{function_metadata.name}_Input",
+        __base__=FunctionBase,
+        **input_fields
+    )
+
+    # Generate output model fields based on function type
+    if function_metadata.type in (FunctionType.TABLE, FunctionType.SET_RETURNING):
+        output_fields = _parse_table_return_type(function_metadata.return_type)
+        is_set = True
+    else:
+        output_type = get_eq_type(function_metadata.return_type)
+        if isinstance(output_type, ArrayType):
+            output_type = List[output_type.item_type]
+        output_fields = {"result": (output_type, ...)}
+        is_set = False
+
+    # Create output model
+    FunctionOutputModel = create_model(
+        f"Function_{function_metadata.name}_Output",
+        __base__=FunctionBase,
+        **output_fields
+    )
+
+    # Generate the route based on function type
+    if function_metadata.object_type == PostgresObjectType.PROCEDURE:
+        @router.post(
+            f"/{function_metadata.name}",
+            response_model=None,
+            tags=[f"{schema.upper()} Procedures"],
+            summary=f"Execute {function_metadata.name} procedure",
+            description=function_metadata.description or f"Execute the {function_metadata.name} procedure"
+        )
+        async def execute_procedure(
+            params: FunctionInputModel,
+            db: Session = Depends(db_dependency)
+        ):
+            # Build procedure call
+            param_list = [f":{p}" for p in input_fields.keys()]
+            query = f"CALL {schema}.{function_metadata.name}({', '.join(param_list)})"
+            await db.execute(text(query), params.model_dump())
+            return {"status": "success"}
+
+    else:
+        @router.post(
+            f"/{function_metadata.name}",
+            response_model=List[FunctionOutputModel] if is_set else FunctionOutputModel,
+            tags=[f"{schema.upper()} Functions"],
+            summary=f"Execute {function_metadata.name} function",
+            description=function_metadata.description or f"Execute the {function_metadata.name} function"
+        )
+        async def execute_function(
+            params: FunctionInputModel,
+            db: Session = Depends(db_dependency)
+        ):
+            # Build function call
+            param_list = [f":{p}" for p in input_fields.keys()]
+            query = f"SELECT * FROM {schema}.{function_metadata.name}({', '.join(param_list)})"
+            result = await db.execute(text(query), params.model_dump())
+            
+            if is_set:
+                records = result.fetchall()
+                return [FunctionOutputModel.model_validate(dict(r._mapping)) for r in records]
+            else:
+                record = result.fetchone()
+                return FunctionOutputModel.model_validate(dict(record._mapping))
+            

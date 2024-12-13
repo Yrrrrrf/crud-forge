@@ -13,7 +13,6 @@ from enum import Enum as PyEnum
 from forge.db import DBForge
 from forge.utils import *
 
-# SAME AS ABOVE BUT USING PYDANTIC MODELS...
 class EnumInfo(BaseModel):
     """Store information about database enums."""
     name: str
