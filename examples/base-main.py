@@ -103,7 +103,7 @@ app.include_router(fn_router)
 
 # ? API Forge -----------------------------------------------------------------------------------
 api_forge = APIForge(model_forge=model_forge)
-# * THE ROUTES MUST BE GENERATED AFTER THE MODELS!
+# # * THE ROUTES MUST BE GENERATED AFTER THE MODELS!
 # api_forge.gen_table_routes()
 # api_forge.gen_view_routes()
 # * Print the routers

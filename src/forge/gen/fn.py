@@ -232,7 +232,8 @@ class FnForge(BaseModel):
                 if isinstance(output_type, ArrayType):
                     output_type = List[output_type.item_type]
                 output_fields = {"result": (output_type, ...)}
-                
+                # Use the function name as the field
+                # output_fields = {metadata.name: (output_type, ...)}
             output_model = create_model(
                 f"{metadata.name}_Output",
                 __base__=BaseModel,
@@ -352,7 +353,7 @@ class FnForge(BaseModel):
         """Generate routes for all discovered functions."""
         for func_id, metadata in self.function_cache.items():
             if metadata.object_type not in [PostgresObjectType.TRIGGER]:  # Skip triggers
-                generate_function_routes(
+                gen_fn_route(
                     schema=metadata.schema,
                     function_metadata=metadata,
                     router=router,
@@ -389,7 +390,7 @@ def _parse_table_return_type(return_type: str) -> Dict[str, Tuple[Type, Any]]:
     return fields
 
 
-def generate_function_routes(
+def gen_fn_route(
     schema: str,
     function_metadata: FunctionMetadata,
     router: APIRouter,
@@ -464,19 +465,21 @@ def generate_function_routes(
             summary=f"Execute {function_metadata.name} function",
             description=function_metadata.description or f"Execute the {function_metadata.name} function"
         )
-        async def execute_function(
+        def execute_function(  # <-- This is async
             params: FunctionInputModel,
             db: Session = Depends(db_dependency)
         ):
             # Build function call
             param_list = [f":{p}" for p in input_fields.keys()]
             query = f"SELECT * FROM {schema}.{function_metadata.name}({', '.join(param_list)})"
-            result = await db.execute(text(query), params.model_dump())
-            
+            result = db.execute(text(query), params.model_dump())
+
             if is_set:
                 records = result.fetchall()
                 return [FunctionOutputModel.model_validate(dict(r._mapping)) for r in records]
             else:
                 record = result.fetchone()
-                return FunctionOutputModel.model_validate(dict(record._mapping))
-            
+                # Transform the data to match your model
+                transformed_data = {"result": list(record._mapping.values())[0]}  # Get the first value
+                return FunctionOutputModel.model_validate(transformed_data)
+                # return FunctionOutputModel.model_validate(dict(record._mapping))

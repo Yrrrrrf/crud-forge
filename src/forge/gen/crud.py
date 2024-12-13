@@ -130,6 +130,10 @@ class CRUD:
                 for resource in resources
             ]
 
+
+    # todo: Fix the return "updated_data"
+    # todo: - The "updated_data" currently returns [] for all cases
+    # todo: - But the "old_data" returns the correct data (old data before update)
     def update(self) -> None:
         """Add UPDATE route."""
         @self.router.put(
