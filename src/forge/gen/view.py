@@ -49,21 +49,36 @@ def generate_view_routes(
             nullable=nullable
         )
         
-        if isinstance(field_type, JSONBType):
-            # Create dynamic model for JSONB fields
-            model = field_type.get_model(f"{view_table.name}_{column.name}")
-            if isinstance(sample_data.get(column.name, []), list):
-                view_query_fields[column.name] = (Optional[str], Field(default=None))
-                response_fields[column.name] = (List[model], Field(default_factory=list))
-            else:
-                view_query_fields[column.name] = (Optional[str], Field(default=None))
-                response_fields[column.name] = (Optional[model] if nullable else model, Field(default=None))
-        elif isinstance(field_type, ArrayType):
-            view_query_fields[column.name] = (Optional[str], Field(default=None))
-            response_fields[column.name] = (List[field_type.item_type], Field(default_factory=list))
-        else:
-            view_query_fields[column.name] = (Optional[field_type], Field(default=None))
-            response_fields[column.name] = (field_type, Field(default=None))
+        view_query_fields[column.name] = (Optional[str], Field(default=None))
+        match field_type:
+            case _ if isinstance(field_type, JSONBType):  # * JSONB type
+                model = field_type.get_model(f"{view_table.name}_{column.name}")
+                match sample_data.get(column.name, []):  # * Infer JSONB structure
+                    case _ if isinstance(sample_data.get(column.name, []), list):  # * List of objects
+                        response_fields[column.name] = (List[model], Field(default_factory=list))
+                    case _:  # * Single object
+                        response_fields[column.name] = (Optional[model] if nullable else model, Field(default=None))
+            case _ if isinstance(field_type, ArrayType):  # * Array type
+                response_fields[column.name] = (List[field_type.item_type], Field(default_factory=list))
+            case _:  # * Simple type
+                view_query_fields[column.name] = (Optional[field_type], Field(default=None))
+                response_fields[column.name] = (field_type, Field(default=None))
+
+        # if isinstance(field_type, JSONBType):
+        #     # Create dynamic model for JSONB fields
+        #     model = field_type.get_model(f"{view_table.name}_{column.name}")
+        #     if isinstance(sample_data.get(column.name, []), list):
+        #         view_query_fields[column.name] = (Optional[str], Field(default=None))
+        #         response_fields[column.name] = (List[model], Field(default_factory=list))
+        #     else:
+        #         view_query_fields[column.name] = (Optional[str], Field(default=None))
+        #         response_fields[column.name] = (Optional[model] if nullable else model, Field(default=None))
+        # elif isinstance(field_type, ArrayType):
+        #     view_query_fields[column.name] = (Optional[str], Field(default=None))
+        #     response_fields[column.name] = (List[field_type.item_type], Field(default_factory=list))
+        # else:
+        #     view_query_fields[column.name] = (Optional[field_type], Field(default=None))
+        #     response_fields[column.name] = (field_type, Field(default=None))
 
     # Create models with proper base classes
     ViewQueryParams = create_model(
@@ -119,7 +134,7 @@ def generate_view_routes(
             for column_name, value in record_dict.items():
                 column = view_table.c[column_name]
                 field_type = get_eq_type(str(column.type), value, nullable=column.nullable)
-                
+
                 if isinstance(field_type, JSONBType):
                     if value is not None:
                         # Parse JSONB data

@@ -157,33 +157,46 @@ def print_table_structure(table: Table) -> None:
         """Get formatted flags for a column."""
         flags = []
         if column.primary_key: flags.append(f'{green("PK")}')
-        if column.foreign_keys:flags.append(f'{blue(f"FK → {next(iter(column.foreign_keys)).column.table}")}')
-        if isinstance(column.type, SQLAlchemyEnum): flags.append(f'{yellow(f"Enum({column.type.name})")}')
+        if column.foreign_keys:
+            ref_table = next(iter(column.foreign_keys)).column.table
+            flags.append(f'{blue(f"FK → {ref_table.schema}.{bold(ref_table.name)}")}')
         return flags
 
-    # * print the table name
+    def get_base_type(type_: Any) -> str:
+        """Extract base type from Optional types."""
+        type_str = str(type_)  # Get the string representation
+
+        if "typing.Optional" in type_str:
+            return re.search(r"\[(.*)\]", type_str).group(1).split(".")[-1]
+        
+        match isinstance(type_, type):  # Handle non-Optional types
+            case True: return type_.__name__  # ^ Return class name if it's a type
+            case False: return str(type_)  # ^ Return string representation otherwise
+
+    # Print table name and comment
     print(f"\t{cyan(table.schema)}.{bold(cyan(table.name))}", end=' ')
     match table.comment:
         case None: print()
         case _: print(f"({italic(gray(table.comment))})")
 
-    # * print columns 
+    # Print columns
     for column in table.columns:
-        flags = get_column_flags(column)
-        flags_str = ' '.join(flags)
+        flags_str = ' '.join(get_column_flags(column))
         py_type = get_eq_type(str(column.type))
         nullable = "" if column.nullable else "*"
         
-        # Check for enum type
-        if isinstance(column.type, SQLAlchemyEnum):
-            type_str = f"{yellow(column.type.name)}"
-            values = f"{gray(str(column.type.enums))}"
-        elif isinstance(py_type, Type):
-            type_str = magenta(py_type.__name__)
-        else:
-            type_str = magenta(str(py_type))
+        # # Determine type string and values based on column type
+        match column.type:
+            case _  if isinstance(column.type, SQLAlchemyEnum):
+                # type_str = f"{yellow(column.type.name)}"
+                type_str = f"{yellow(f"Enum({column.type.name})")}"
+                values = f"{gray(str(column.type.enums))}"
+            case _:
+                values = ""
+                if isinstance(py_type, JSONBType): type_str = magenta("JSONB")
+                else: type_str = magenta(get_base_type(py_type))
 
         print(f"\t\t{column.name:<24} {red(f'{nullable:<2}')}{gray(str(column.type)[:20]):<32} "
-              f"{type_str:<16} {flags_str} {values if 'values' in locals() else ''}")
+              f"{type_str:<16} {flags_str} {values if values else ''}")
 
     print()

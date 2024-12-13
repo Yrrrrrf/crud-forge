@@ -13,59 +13,46 @@ class DynamicBase(BaseModel):
         arbitrary_types_allowed=True
     )
 
-class ArrayType:
+class ArrayType(BaseModel):
     """Wrapper class for array types"""
-    def __init__(self, item_type: Type):
-        self.item_type = item_type
+    item_type: Type = Field(...)
 
     def __call__(self) -> List:
         return list()
 
 def infer_type(value: Any) -> Type:
     """Infer Python type from a value"""
-    if value is None:
-        return Any
-    elif isinstance(value, bool):
-        return bool
-    elif isinstance(value, int):
-        return int
-    elif isinstance(value, float):
-        return float
-    elif isinstance(value, datetime):
-        return datetime
-    elif isinstance(value, str):
-        # Try to parse as UUID
-        try:
-            UUID(value)
-            return UUID
-        except ValueError:
-            return str
-    return str  # default to string for unknown types
+    match value:
+        case None: return Any
+        case _ if isinstance(value, bool): return bool
+        case _ if isinstance(value, int): return int
+        case _ if isinstance(value, float): return float
+        case _ if isinstance(value, datetime): return datetime
+        case _ if isinstance(value, UUID): return UUID
+        case _ if isinstance(value, str):
+            try: return UUID(value)  # Try to parse as UUID
+            except: return str  # Default to string
+
 
 def create_dynamic_model(json_data: Any, model_name: str) -> Type[BaseModel]:
     """Create a Pydantic model dynamically from JSON data"""
-    if isinstance(json_data, list) and json_data:
-        # Use the first item as a template for the structure
-        template = json_data[0]
-    elif isinstance(json_data, dict):
-        template = json_data
-    else:
-        raise ValueError("Cannot create model from this JSON structure")
+    match json_data:
+        # todo: Add tuple?
+        case _ if isinstance(json_data, list) and json_data: template = json_data[0]
+        case _ if isinstance(json_data, dict): template = json_data
+        case _: raise ValueError("Cannot create model from this JSON structure")
 
     fields = {}
     for key, value in template.items():
-        if isinstance(value, dict):
-            # Nested object
-            nested_model = create_dynamic_model(value, f"{model_name}_{key}")
-            fields[key] = (nested_model, Field(default_factory=nested_model))
-        elif isinstance(value, list) and value and isinstance(value[0], dict):
-            # List of objects
-            nested_model = create_dynamic_model(value[0], f"{model_name}_{key}_item")
-            fields[key] = (List[nested_model], Field(default_factory=list))
-        else:
-            # Simple type
-            python_type = infer_type(value)
-            fields[key] = (Optional[python_type], Field(default=None))
+        match value:
+            case _ if isinstance(value, dict):  # * Nested object
+                nested_model = create_dynamic_model(value, f"{model_name}_{key}")
+                fields[key] = (nested_model, Field(default_factory=nested_model))
+            case _ if isinstance(value, list) and value and isinstance(value[0], dict):  # * List of objects
+                nested_model = create_dynamic_model(value[0], f"{model_name}_{key}_item")
+                fields[key] = (List[nested_model], Field(default_factory=list))
+            case _:  # * Simple type
+                fields[key] = (Optional[infer_type(value)], Field(default=None))
 
     return create_model(
         model_name,
@@ -89,9 +76,9 @@ class JSONBType:
 
 def make_optional(type_: Type) -> Type:
     """Make a type optional if it isn't already"""
-    if get_origin(type_) is Union and type(None) in get_args(type_):
-        return type_
-    return Optional[type_]
+    match get_origin(type_) is Union and type(None) in get_args(type_):
+        case True: return type_
+        case _: return Optional[type_]  # Add Optional wrapper
 
 SQL_TYPE_MAPPING: Dict[str, Type] = {
     r'uuid': UUID,
@@ -122,24 +109,15 @@ def get_eq_type(sql_type: str, sample_data: Any = None, nullable: bool = True) -
     """Enhanced type mapping with JSONB support and nullable handling"""
     sql_type_lower = sql_type.lower()
     
-    # Handle JSONB type
-    if 'jsonb' in sql_type_lower:
-        return JSONBType(sample_data)
-    
-    # Handle timestamps specifically
-    if 'timestamp' in sql_type_lower:
-        return make_optional(datetime) if nullable else datetime
-    
-    # Check if it's an array type
-    if sql_type_lower.endswith('[]'):
-        return parse_array_type(sql_type_lower)
-    
-    # Regular type mapping
-    for pattern, py_type in SQL_TYPE_MAPPING.items():
-        if re.match(pattern, sql_type_lower):
-            return make_optional(py_type) if nullable else py_type
-            
-    return Any  # Default fallback
+    match sql_type.lower():
+        case 'jsonb': return JSONBType(sample_data)
+        case 'timestamp': return make_optional(datetime) if nullable else datetime
+        case _ if sql_type_lower.endswith('[]'): return parse_array_type(sql_type_lower)
+        case _:
+            for pattern, py_type in SQL_TYPE_MAPPING.items():
+                if re.match(pattern, sql_type_lower):
+                    return make_optional(py_type) if nullable else py_type
+            return Any  # Default fallback
 
 def parse_array_type(sql_type: str) -> Type:
     """Parse array type and return appropriate Python type"""

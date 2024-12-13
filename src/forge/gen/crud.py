@@ -48,7 +48,7 @@ class CRUD:
             else:
                 # Make field Optional
                 query_fields[field_name] = (Optional[field], Field(default=None))
-        
+
         # Create the query params model
         return create_model(
             f"{self.pydantic_model.__name__}QueryParams",
@@ -78,9 +78,9 @@ class CRUD:
         ) -> self.pydantic_model:
             data = resource.model_dump(exclude_unset=True)
             
-            # Handle UUID fields
+            # Only remove the primary key UUID if it exists, keep foreign key UUIDs
             for column in self.table.columns:
-                if column.type.python_type == uuid.UUID:
+                if column.type.python_type == uuid.UUID and column.primary_key:
                     data.pop(column.name, None)
                     
             try:
